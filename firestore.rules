@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && getUserData().role == 'superAdmin';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (getUserData().role == 'admin' || isSuperAdmin());
+    }
+
+    function isStrictAdmin() {
+      return isAuthenticated() && getUserData().role == 'admin';
+    }
+
+    // 1. Users collection & Tenant Assignment
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      
+      // Allow user creation on initial registration:
+      // - Students must have an ownerAdminId
+      // - Users cannot self-assign superAdmin
+      allow create: if isAuthenticated() && request.auth.uid == userId 
+        && request.resource.data.role != 'superAdmin'
+        && (request.resource.data.role != 'student' || (request.resource.data.ownerAdminId is string && request.resource.data.ownerAdminId.size() > 0));
+
+      // Updates:
+      // - Super Admin can transfer students (update ownerAdminId) and manage users
+      // - Users can update their profile but CANNOT modify their role or ownerAdminId
+      // - Admins can update their assigned students but CANNOT change student's role or ownerAdminId
+      allow update: if isSuperAdmin()
+        || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'ownerAdminId']))
+        || (isStrictAdmin() && resource.data.ownerAdminId == request.auth.uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'ownerAdminId']));
+
+      allow delete: if isSuperAdmin();
+
+      match /summaries/{summaryType} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // 2. Admin Join Codes
+    match /admin_join_codes/{codeHash} {
+      // Individual code verification: any authenticated user can get a specific document by hash
+      allow get: if isAuthenticated();
+      // Enumeration / list: strictly restricted to Admins and Super Admin (students cannot list codes)
+      allow list: if isAdmin();
+      // Admin can manage their own join code; Super Admin can manage all join codes
+      allow create, update: if isSuperAdmin() || (isStrictAdmin() && request.resource.data.adminId == request.auth.uid);
+      allow delete: if isSuperAdmin();
+    }
+
+    // 3. Courses, Units & Lessons
+    match /courses/{courseId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+
+      match /units/{unitId} {
+        allow read: if isAuthenticated();
+        allow write: if isAdmin();
+      }
+    }
+
+    match /lessons/{lessonId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 4. Quizzes & Full Exams
+    match /quizzes/{quizId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // 5. Exam Attempts
+    match /exam_attempts/{attemptId} {
+      // Students can read their own attempts; teachers can read attempts
+      allow read: if isAuthenticated() && (resource.data.studentId == request.auth.uid || isAdmin());
+      // Students can only create attempts for themselves; cannot tamper after write
+      allow create: if isAuthenticated() && request.resource.data.studentId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // 6. Question Bank
+    match /question_bank/{questionId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 7. Attendance Records
+    match /attendance/{attendanceId} {
+      allow read: if isAuthenticated() && (resource.data.studentId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // 8. Evaluations (Bonus / Minus)
+    match /evaluations/{evaluationId} {
+      allow read: if isAuthenticated() && (resource.data.studentId == request.auth.uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // 9. Notifications Queue
+    match /notifications_queue/{notificationId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false; 
+    }
+  }
+}
