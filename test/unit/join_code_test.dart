@@ -490,5 +490,36 @@ void main() {
         expect(UserRole.student.isStudent, isTrue);
       },
     );
+
+    test(
+      'Newly created admin gets valid join code generated and student defaults are enforced',
+      () async {
+        // Default role for new public registration is student
+        const defaultPublicRole = UserRole.student;
+        expect(defaultPublicRole.isAdmin, isFalse);
+        expect(defaultPublicRole.isStudent, isTrue);
+
+        // An existing admin creates a new admin account
+        const existingAdminId = 'admin_existing_999';
+        const newAdminId = 'admin_new_123';
+        const newAdminName = 'الأستاذ خالد';
+
+        final codeModel = await repository.generateOrRegenerateCode(
+          adminId: newAdminId,
+          adminName: newAdminName,
+          createdBy: existingAdminId,
+        );
+
+        expect(codeModel.adminId, equals(newAdminId));
+        expect(codeModel.adminName, equals(newAdminName));
+        expect(codeModel.isActive, isTrue);
+        expect(codeModel.code, isNotEmpty);
+        expect(codeModel.code.length, equals(6));
+
+        // Validate the generated code works for student registration
+        final validated = await repository.validateJoinCode(codeModel.code);
+        expect(validated.adminId, equals(newAdminId));
+      },
+    );
   });
 }

@@ -26,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isSignUp = false;
   bool _obscurePassword = true;
+  // ignore: prefer_final_fields
   UserRole _selectedRole = UserRole.student;
   StudentGrade _selectedGrade = StudentGrade.firstSecondary;
 
@@ -270,7 +271,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 16),
 
-                            // Role Selection
+                            // Public admin signup is disabled: only existing admins can create new admin accounts.
+                            // Registration from this screen is strictly for students.
+                            /*
                             const Text(
                               'نوع الحساب',
                               style: TextStyle(
@@ -310,6 +313,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ],
                             ),
                             const SizedBox(height: 16),
+                            */
 
                             // Grade Selection (for students only)
                             if (_selectedRole == UserRole.student) ...[

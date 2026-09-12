@@ -10,6 +10,7 @@ import '../../../attendance/presentation/screens/mark_attendance_screen.dart';
 import '../../../auth/domain/entities/user_entity.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/cubit/admin_management_cubit.dart';
+import '../../../auth/presentation/widgets/create_admin_dialog.dart';
 import '../../../courses/presentation/screens/course_list_screen.dart';
 import '../../../evaluations/presentation/screens/evaluations_ledger_screen.dart';
 import '../../../notifications/presentation/screens/notifications_screen.dart';
@@ -316,6 +317,11 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                 );
               },
             ),
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            tooltip: 'إنشاء حساب معلم جديد',
+            onPressed: () => showCreateAdminDialog(context, widget.user),
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             tooltip: 'التنبيهات والإعلانات',
@@ -872,6 +878,13 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                         },
                       );
                     },
+                  ),
+                  _ModuleCard(
+                    title: 'إضافة معلم / مشرف',
+                    subtitle: 'إنشاء حساب معلم جديد ومنحه كود الانضمام',
+                    icon: Icons.person_add_alt_1_outlined,
+                    color: AppColors.secondary,
+                    onTap: () => showCreateAdminDialog(context, widget.user),
                   ),
                 ],
               ),

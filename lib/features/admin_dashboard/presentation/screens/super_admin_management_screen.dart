@@ -8,6 +8,7 @@ import '../../../../core/widgets/responsive_layout.dart';
 import '../../../auth/domain/entities/admin_overview_entity.dart';
 import '../../../auth/domain/entities/user_entity.dart';
 import '../../../auth/presentation/cubit/admin_management_cubit.dart';
+import '../../../auth/presentation/widgets/create_admin_dialog.dart';
 
 class SuperAdminManagementScreen extends StatelessWidget {
   final UserEntity superAdmin;
@@ -35,6 +36,20 @@ class _SuperAdminView extends StatelessWidget {
       appBar: AppBar(
         title: const Text('لوحة الإدارة العليا (Super Admin)'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            tooltip: 'إضافة معلم جديد',
+            onPressed:
+                () => showCreateAdminDialog(
+                  context,
+                  superAdmin,
+                  onAdminCreated:
+                      () =>
+                          context
+                              .read<AdminManagementCubit>()
+                              .loadSuperAdminOverview(),
+                ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'تحديث البيانات',
@@ -151,6 +166,25 @@ class _SuperAdminView extends StatelessWidget {
 
           return const SizedBox.shrink();
         },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed:
+            () => showCreateAdminDialog(
+              context,
+              superAdmin,
+              onAdminCreated:
+                  () =>
+                      context
+                          .read<AdminManagementCubit>()
+                          .loadSuperAdminOverview(),
+            ),
+        icon: const Icon(Icons.person_add_alt_1_rounded),
+        label: const Text(
+          'إضافة معلم جديد',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
       ),
     );
   }

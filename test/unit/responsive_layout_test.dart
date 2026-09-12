@@ -116,6 +116,7 @@ void main() {
 
       final childBox = tester.getRect(find.byKey(const Key('child_box')));
       expect(childBox.width, 900.0);
+      expect(childBox.top, 0.0);
     });
   });
 }

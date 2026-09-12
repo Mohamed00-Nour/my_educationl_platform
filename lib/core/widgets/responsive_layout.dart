@@ -82,11 +82,9 @@ class ResponsiveContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget content = Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        child: child,
-      ),
+    Widget content = ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: child,
     );
 
     if (padding != null) {
