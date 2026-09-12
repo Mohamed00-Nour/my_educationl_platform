@@ -984,7 +984,7 @@ class _LessonQuizCardState extends State<_LessonQuizCard> {
                             color: AppColors.textPrimary,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 4),
                         Text(
                           _quiz != null
                               ? '${_quiz!.durationMinutes} دقيقة • ${_quiz!.questions.length} سؤال • ${_quiz!.totalMarks} درجة'
@@ -997,137 +997,199 @@ class _LessonQuizCardState extends State<_LessonQuizCard> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  if (_isCompleted)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withAlpha(25),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: AppColors.success.withAlpha(90),
-                          width: 1.2,
+                  if (!_isCompleted && !_isDownloaded) ...[
+                    const SizedBox(width: 8),
+                    if (_isDownloading)
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        child: const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
                         ),
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(
+                          Icons.download_for_offline_outlined,
+                          color: AppColors.primary,
+                        ),
+                        tooltip: 'تحميل الاختبار ورمز البدء للعمل بدون إنترنت',
+                        onPressed: _downloadForOffline,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.verified_rounded,
-                            size: 14,
-                            color: AppColors.success,
+                  ],
+                ],
+              ),
+              if ((_quiz?.requireStartCode ?? false) ||
+                  _isCompleted ||
+                  _isDownloaded ||
+                  _isDownloading) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (_quiz?.requireStartCode ?? false)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withAlpha(20),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: AppColors.warning.withAlpha(90),
+                            width: 1.2,
                           ),
-                          const SizedBox(width: 5),
-                          Text(
-                            _hasPassed ? 'تم الإجتياز بنجاح' : 'تم الإجتياز',
-                            style: const TextStyle(
-                              color: AppColors.success,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 11,
-                              fontFamily: 'Cairo',
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.lock_outline,
+                              size: 12,
+                              color: AppColors.warning,
                             ),
-                          ),
-                          if (_latestAttempt != null && _quiz != null) ...[
-                            const SizedBox(width: 6),
+                            SizedBox(width: 4),
                             Text(
-                              '• ${_latestAttempt!.score}/${_quiz!.totalMarks}',
-                              style: const TextStyle(
-                                color: AppColors.success,
-                                fontWeight: FontWeight.w700,
+                              'رمز سري',
+                              style: TextStyle(
                                 fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.warning,
+                                fontFamily: 'Cairo',
                               ),
                             ),
                           ],
-                        ],
-                      ),
-                    )
-                  else if (_isDownloaded)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withAlpha(25),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: AppColors.success.withAlpha(90),
-                          width: 1.2,
                         ),
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.check_circle_rounded,
-                            size: 14,
-                            color: AppColors.success,
+                    if (_isCompleted)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withAlpha(25),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.success.withAlpha(90),
+                            width: 1.2,
                           ),
-                          SizedBox(width: 5),
-                          Text(
-                            'تم التحميل وجاهز للبدء',
-                            style: TextStyle(
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.verified_rounded,
+                              size: 14,
                               color: AppColors.success,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                              fontFamily: 'Cairo',
                             ),
+                            const SizedBox(width: 5),
+                            Text(
+                              _hasPassed ? 'تم الإجتياز بنجاح' : 'تم الإجتياز',
+                              style: const TextStyle(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                                fontFamily: 'Cairo',
+                              ),
+                            ),
+                            if (_latestAttempt != null && _quiz != null) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                '• ${_latestAttempt!.score}/${_quiz!.totalMarks}',
+                                style: const TextStyle(
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    else if (_isDownloaded)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.success.withAlpha(25),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.success.withAlpha(90),
+                            width: 1.2,
                           ),
-                        ],
-                      ),
-                    )
-                  else if (_isDownloading)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withAlpha(20),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: AppColors.primary.withAlpha(70),
-                          width: 1.2,
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 14,
+                              color: AppColors.success,
+                            ),
+                            SizedBox(width: 5),
+                            Text(
+                              'تم التحميل وجاهز للبدء',
+                              style: TextStyle(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                                fontFamily: 'Cairo',
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (_isDownloading)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withAlpha(20),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.primary.withAlpha(70),
+                            width: 1.2,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'جاري التجهيز والتحميل...',
+                              style: TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                                fontFamily: 'Cairo',
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            'جاري التجهيز والتحميل...',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 11,
-                              fontFamily: 'Cairo',
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    IconButton(
-                      icon: const Icon(
-                        Icons.download_for_offline_outlined,
-                        color: AppColors.primary,
-                      ),
-                      tooltip: 'تحميل الاختبار ورمز البدء للعمل بدون إنترنت',
-                      onPressed: _downloadForOffline,
-                    ),
-                ],
-              ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               Row(
                 children: [
