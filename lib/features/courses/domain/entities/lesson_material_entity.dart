@@ -4,24 +4,28 @@ enum CourseMaterialType {
   ministryBook,
   slides,
   summaryPdf,
+  pdf,
   video,
-  link,
-  pdf;
+  interactiveHtml,
+  link;
 
   static CourseMaterialType fromString(String? type) {
     if (type == null) return CourseMaterialType.link;
     final lower = type.toLowerCase().trim();
-    if (lower == 'ministrybook' || lower == 'book') {
+    if (lower == 'ministrybook' || lower == 'book' || lower == 'كتاب') {
       return CourseMaterialType.ministryBook;
     }
-    if (lower == 'slides' || lower == 'presentation') {
+    if (lower == 'slides' || lower == 'presentation' || lower == 'شرائح') {
       return CourseMaterialType.slides;
     }
-    if (lower == 'summarypdf' || lower == 'summary') {
+    if (lower == 'summarypdf' || lower == 'summary' || lower == 'ملخص') {
       return CourseMaterialType.summaryPdf;
     }
-    if (lower == 'video' || lower == 'youtube') {
+    if (lower == 'video' || lower == 'youtube' || lower == 'فيديو') {
       return CourseMaterialType.video;
+    }
+    if (lower == 'interactivehtml' || lower == 'html' || lower == 'htm' || lower == 'web') {
+      return CourseMaterialType.interactiveHtml;
     }
     if (lower == 'pdf') return CourseMaterialType.pdf;
     return CourseMaterialType.link;
@@ -36,10 +40,13 @@ enum CourseMaterialType {
       case CourseMaterialType.slides:
         return 'عرض تقديمي (شرائح)';
       case CourseMaterialType.summaryPdf:
-      case CourseMaterialType.pdf:
         return 'ملخص الدرس (PDF)';
+      case CourseMaterialType.pdf:
+        return 'مستند / ملف (PDF)';
       case CourseMaterialType.video:
         return 'فيديو شرح';
+      case CourseMaterialType.interactiveHtml:
+        return 'نشاط أو صفحة (HTML)';
       case CourseMaterialType.link:
         return 'رابط إلكتروني';
     }

@@ -54,6 +54,12 @@ dependencies:
   # Reports & PDF Generation
   pdf: ^3.11.3
   printing: ^5.13.3
+  syncfusion_flutter_pdfviewer: ^31.1.19
+
+  # Media & Web Viewers
+  video_player: ^2.10.1
+  chewie: ^1.12.1
+  webview_flutter: ^4.13.0
 
   # UI & Design
   cupertino_icons: ^1.0.8

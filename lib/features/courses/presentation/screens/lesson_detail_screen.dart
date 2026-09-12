@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/url_service.dart';
@@ -16,6 +17,9 @@ import '../../../quizzes/presentation/widgets/start_code_dialog.dart';
 import '../../domain/entities/lesson_entity.dart';
 import '../../domain/entities/lesson_material_entity.dart';
 import '../bloc/course_bloc.dart';
+import 'pdf_viewer_screen.dart';
+import 'video_player_screen.dart';
+import 'html_viewer_screen.dart';
 
 class LessonDetailScreen extends StatefulWidget {
   final LessonEntity lesson;
@@ -39,6 +43,8 @@ class LessonDetailScreen extends StatefulWidget {
         return Icons.play_circle_fill_rounded;
       case CourseMaterialType.pdf:
         return Icons.picture_as_pdf_rounded;
+      case CourseMaterialType.interactiveHtml:
+        return Icons.code_rounded;
       case CourseMaterialType.link:
         return Icons.link_rounded;
     }
@@ -56,6 +62,8 @@ class LessonDetailScreen extends StatefulWidget {
         return Colors.red;
       case CourseMaterialType.pdf:
         return Colors.deepOrange;
+      case CourseMaterialType.interactiveHtml:
+        return Colors.cyan;
       case CourseMaterialType.link:
         return AppColors.info;
     }
@@ -127,9 +135,52 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                   controller: urlController,
                   decoration: const InputDecoration(
                     labelText: 'رابط الملف أو الصفحة (URL) *',
-                    hintText: 'https://...',
+                    hintText: 'https://... أو اختر ملفاً من الجهاز أدناه',
                   ),
                   keyboardType: TextInputType.url,
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.file_upload_outlined, size: 18),
+                    label: const Text('اختيار ملف من الجهاز (PDF / HTML / Video)'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primaryLight,
+                      side: const BorderSide(color: AppColors.primaryLight),
+                    ),
+                    onPressed: () async {
+                      try {
+                        final result = await FilePicker.platform.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['pdf', 'html', 'htm', 'mp4', 'mov', 'webm', 'mkv'],
+                        );
+                        if (result != null && result.files.isNotEmpty) {
+                          final file = result.files.first;
+                          final path = file.path;
+                          final name = file.name;
+                          if (path != null) {
+                            setDialogState(() {
+                              urlController.text = path;
+                              if (titleController.text.trim().isEmpty) {
+                                titleController.text = name.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '');
+                              }
+                              final ext = name.split('.').last.toLowerCase();
+                              if (ext == 'pdf') {
+                                selectedType = CourseMaterialType.pdf;
+                              } else if (ext == 'html' || ext == 'htm') {
+                                selectedType = CourseMaterialType.interactiveHtml;
+                              } else if (['mp4', 'mov', 'webm', 'mkv'].contains(ext)) {
+                                selectedType = CourseMaterialType.video;
+                              }
+                            });
+                          }
+                        }
+                      } catch (e) {
+                        // ignore error
+                      }
+                    },
+                  ),
                 ),
                 const SizedBox(height: 12),
                 if (selectedType == CourseMaterialType.ministryBook ||
@@ -498,6 +549,86 @@ class _MaterialCard extends StatelessWidget {
     this.onDelete,
   });
 
+  bool get _isPdf {
+    final urlLower = material.url.toLowerCase().trim();
+    return material.type == CourseMaterialType.ministryBook ||
+        material.type == CourseMaterialType.summaryPdf ||
+        material.type == CourseMaterialType.pdf ||
+        urlLower.endsWith('.pdf') ||
+        urlLower.contains('.pdf?');
+  }
+
+  bool get _isVideo {
+    final urlLower = material.url.toLowerCase().trim();
+    return material.type == CourseMaterialType.video ||
+        urlLower.endsWith('.mp4') ||
+        urlLower.endsWith('.mov') ||
+        urlLower.endsWith('.webm') ||
+        urlLower.endsWith('.mkv') ||
+        urlLower.contains('youtube.com') ||
+        urlLower.contains('youtu.be');
+  }
+
+  bool get _isHtml {
+    final urlLower = material.url.toLowerCase().trim();
+    return material.type == CourseMaterialType.interactiveHtml ||
+        urlLower.endsWith('.html') ||
+        urlLower.endsWith('.htm');
+  }
+
+  void _openMaterial(BuildContext context) {
+    if (_isPdf) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PdfViewerScreen(material: material),
+        ),
+      );
+    } else if (_isVideo) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => VideoPlayerScreen(material: material),
+        ),
+      );
+    } else if (_isHtml) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HtmlViewerScreen(material: material),
+        ),
+      );
+    } else {
+      _launchExternal(context);
+    }
+  }
+
+  Future<void> _launchExternal(BuildContext context) async {
+    final opened = await UrlService.openExternalUrl(material.url);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر فتح الرابط الخارجي. يرجى التحقق من صحة الرابط.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  IconData _getActionIcon() {
+    if (_isPdf) return Icons.visibility_outlined;
+    if (_isVideo) return Icons.play_circle_fill_rounded;
+    if (_isHtml) return Icons.code_rounded;
+    return Icons.open_in_new;
+  }
+
+  String _getActionTooltip() {
+    if (_isPdf) return 'عرض وقراءة المستند';
+    if (_isVideo) return 'تشغيل الفيديو';
+    if (_isHtml) return 'عرض النشاط التفاعلي';
+    return 'زيارة الرابط الإلكتروني';
+  }
+
   @override
   Widget build(BuildContext context) {
     final color = LessonDetailScreen.getMaterialColor(material.type);
@@ -516,6 +647,7 @@ class _MaterialCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        onTap: () => _openMaterial(context),
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
@@ -570,19 +702,9 @@ class _MaterialCard extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
-              icon: const Icon(Icons.open_in_new, size: 20, color: AppColors.primaryLight),
-              tooltip: 'فتح المرفق',
-              onPressed: () async {
-                final opened = await UrlService.openExternalUrl(material.url);
-                if (!opened && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('تعذر فتح الرابط الخارجي. يرجى التحقق من صحة الرابط.'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
-                }
-              },
+              icon: Icon(_getActionIcon(), size: 22, color: color),
+              tooltip: _getActionTooltip(),
+              onPressed: () => _openMaterial(context),
             ),
             if (isAdmin && onDelete != null)
               IconButton(

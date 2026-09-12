@@ -147,6 +147,8 @@ class CourseJsonParser {
                     matType = CourseMaterialType.summaryPdf;
                   } else if (matTypeStr.contains('video') || matTypeStr.contains('فيديو')) {
                     matType = CourseMaterialType.video;
+                  } else if (matTypeStr.contains('html') || matTypeStr.contains('نشاط') || matTypeStr.contains('صفحة')) {
+                    matType = CourseMaterialType.interactiveHtml;
                   } else if (matTypeStr.contains('pdf')) {
                     matType = CourseMaterialType.pdf;
                   }
