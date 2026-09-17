@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/utils/start_code_utils.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/responsive_layout.dart';
+import '../../../notifications/data/services/notification_queue_service.dart';
+import '../../../notifications/presentation/widgets/push_notification_fields.dart';
 import '../../domain/entities/question_entity.dart';
 import '../../domain/entities/quiz_entity.dart';
 import '../../domain/repositories/quiz_repository.dart';
@@ -36,7 +39,6 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _durationController = TextEditingController(text: '30');
-  final _passingScoreController = TextEditingController(text: '60');
   final _attemptsController = TextEditingController(text: '1');
   final _startCodeController = TextEditingController();
 
@@ -53,11 +55,16 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
   String _showExplanations = AppConstants.explanationAfterSubmission;
   bool _isPublished = true;
   bool _isSaving = false;
+  late final PushNotificationDraft _notificationDraft;
 
   @override
   void initState() {
     super.initState();
     _selectedCourseId = widget.courseId;
+    _notificationDraft = PushNotificationDraft(
+      defaultTitle: 'اختبار جديد',
+      defaultBody: 'تم نشر اختبار جديد في الكورس.',
+    );
 
     _questions = List<QuestionEntity>.from(
       widget.initialQuestions.isNotEmpty
@@ -70,7 +77,6 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
       _titleController.text = q.title;
       _descriptionController.text = q.description;
       _durationController.text = q.durationMinutes.toString();
-      _passingScoreController.text = q.passingScore.toString();
       _attemptsController.text = q.maxAttempts.toString();
       _selectedType = q.type;
       _requireStartCode = q.requireStartCode;
@@ -124,9 +130,9 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _durationController.dispose();
-    _passingScoreController.dispose();
     _attemptsController.dispose();
     _startCodeController.dispose();
+    _notificationDraft.dispose();
     super.dispose();
   }
 
@@ -777,6 +783,19 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
       return;
     }
 
+    if (widget.existingQuiz == null) {
+      final notificationError = _notificationDraft.validate();
+      if (notificationError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(notificationError),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
+    }
+
     if (_requireStartCode) {
       final code = _startCodeController.text.trim();
       if (code.isEmpty) {
@@ -804,7 +823,6 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
     setState(() => _isSaving = true);
     try {
       final duration = int.tryParse(_durationController.text.trim()) ?? 30;
-      final passing = int.tryParse(_passingScoreController.text.trim()) ?? 50;
       final attempts = int.tryParse(_attemptsController.text.trim()) ?? 1;
 
       final totalMarks = _questions.fold<int>(0, (acc, q) => acc + q.marks);
@@ -830,7 +848,7 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
         lessonId: widget.lessonId,
         durationMinutes: duration,
         totalMarks: totalMarks > 0 ? totalMarks : _questions.length,
-        passingScore: passing,
+        passingScore: PerformanceRating.passThreshold.round(),
         maxAttempts: attempts,
         shuffleQuestions: _shuffleQuestions,
         shuffleOptions: _shuffleOptions,
@@ -850,7 +868,17 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
       if (widget.existingQuiz != null && widget.existingQuiz!.id.isNotEmpty) {
         await repo.updateQuiz(quiz);
       } else {
-        await repo.createQuiz(quiz);
+        final createdQuiz = await repo.createQuiz(quiz);
+        final notification = _notificationDraft.buildRequest(
+          courseId: _selectedCourseId,
+          contentType: 'quiz',
+          contentId: createdQuiz.id,
+        );
+        if (notification != null) {
+          await getIt<NotificationQueueService>().enqueueCourseNotification(
+            notification,
+          );
+        }
       }
 
       if (mounted) {
@@ -1359,14 +1387,36 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Passing Score & Max Attempts
+              // Unified performance policy & max attempts
               Row(
                 children: [
                   Expanded(
-                    child: AppTextField(
-                      controller: _passingScoreController,
-                      label: 'درجة النجاح (%)',
-                      keyboardType: TextInputType.number,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: AppColors.success.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'نظام التقييم الموحد',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          SizedBox(height: 4),
+                          Text(
+                            'أقل من 50% يحتاج تدريب • 50–89.99% جيد • 90–99.99% جيد جداً • 100% ممتاز',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1583,6 +1633,8 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
                   ),
                 ),
               ),
+              if (widget.existingQuiz == null)
+                PushNotificationFields(draft: _notificationDraft),
               const SizedBox(height: 28),
 
               AppButton(

@@ -54,9 +54,10 @@ class _InstructorAppState extends State<InstructorApp>
         ),
         BlocProvider<CourseBloc>(
           create:
-              (_) => getIt<CourseBloc>()
-                ..add(const FetchCoursesRequested())
-                ..add(const StreamCoursesRequested()),
+              (_) =>
+                  getIt<CourseBloc>()
+                    ..add(const FetchCoursesRequested())
+                    ..add(const StreamCoursesRequested()),
         ),
         BlocProvider<AIImportBloc>(create: (_) => getIt<AIImportBloc>()),
       ],
@@ -87,10 +88,12 @@ class _AppRouter extends StatelessWidget {
     return BlocConsumer<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state is Authenticated) {
-          // Initialize FCM device token sync safely on authentication
-          getIt<FCMService>().initializeForUser(state.user.id);
+          // Keep this device subscribed only to the student's enrolled courses.
+          getIt<FCMService>().initializeForUser(state.user);
           // Sync any pending offline attempts for this student
           getIt<AttemptSyncService>().syncPendingAttempts();
+        } else if (state is Unauthenticated) {
+          getIt<FCMService>().clearForSignedOutUser();
         }
       },
       builder: (context, state) {

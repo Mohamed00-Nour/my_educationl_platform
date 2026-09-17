@@ -4,6 +4,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_time_utils.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/responsive_layout.dart';
 import '../../../../core/widgets/status_badge.dart';
@@ -229,26 +230,32 @@ class _ParentReportScreenState extends State<ParentReportScreen> {
         final totalQuestions = a.correctCount + a.incorrectCount;
         final maxMarks = quiz?.totalMarks ??
             (totalQuestions > 0 ? totalQuestions : (a.score > 0 ? a.score : 100));
+        final normalizedPercentage = maxMarks > 0
+            ? PerformanceRating.fromScore(
+                score: a.score,
+                totalMarks: maxMarks,
+              ).percentage
+            : PerformanceRating.fromPercentage(a.percentage).percentage;
 
         if (isFullExam) {
           exams.add({
             'name': title,
             'score': a.score,
             'maxScore': maxMarks,
-            'percentage': a.percentage,
+            'percentage': normalizedPercentage.toStringAsFixed(1),
             'date': DateTimeUtils.toShortDate(a.submittedAt),
             'duration': '${(a.durationSecondsUsed / 60).round()} دقيقة',
           });
-          examSum += a.percentage;
+          examSum += normalizedPercentage;
         } else {
           quizzes.add({
             'name': title,
             'score': a.score,
             'maxScore': maxMarks,
-            'percentage': a.percentage,
+            'percentage': normalizedPercentage.toStringAsFixed(1),
             'date': DateTimeUtils.toShortDate(a.submittedAt),
           });
-          quizSum += a.percentage;
+          quizSum += normalizedPercentage;
         }
       }
 
@@ -302,18 +309,9 @@ class _ParentReportScreenState extends State<ParentReportScreen> {
         (baseScore + netAdjustments).clamp(0.0, 100.0).toStringAsFixed(1),
       );
 
-      String remarks;
-      if (overallEvaluation >= 90) {
-        remarks = 'التقدير: ممتاز (A) • مستوى أكاديمي متميز وفائق';
-      } else if (overallEvaluation >= 80) {
-        remarks = 'التقدير: جيد جداً (B) • أداء دراسي ممتاز ومستقر';
-      } else if (overallEvaluation >= 70) {
-        remarks = 'التقدير: جيد (C) • تقدم مرضي ونتائج جيدة';
-      } else if (overallEvaluation >= 60) {
-        remarks = 'التقدير: مقبول (D) • يحتاج إلى مزيد من الدعم والمتابعة';
-      } else {
-        remarks = 'التقدير: ضعيف (F) • يستوجب المتابعة والمراجعة الفورية';
-      }
+      final performance = PerformanceRating.fromPercentage(overallEvaluation);
+      final remarks =
+          'التقدير: ${performance.labelArabic} • ${performance.resultMessageArabic}';
 
       final teacherNotes =
           totalSessions > 0 ||

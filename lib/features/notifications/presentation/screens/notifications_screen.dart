@@ -24,7 +24,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void _showCreateAnnouncementDialog() {
     final titleCtrl = TextEditingController();
     final bodyCtrl = TextEditingController();
-    String targetType = 'all';
+    String targetType = 'teacher';
 
     showDialog(
       context: context,
@@ -57,16 +57,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           ),
                           items: [
                             const DropdownMenuItem(
-                              value: 'all',
-                              child: Text('جميع الطلاب (عام)'),
-                            ),
-                            DropdownMenuItem(
-                              value: StudentGrade.firstSecondary.toValue(),
-                              child: const Text('طلاب أولى ثانوي فقط'),
-                            ),
-                            DropdownMenuItem(
-                              value: StudentGrade.secondSecondary.toValue(),
-                              child: const Text('طلاب تانية ثانوي فقط'),
+                              value: 'teacher',
+                              child: Text('جميع طلابي في كل الكورسات'),
                             ),
                             if (widget.courseId != null)
                               const DropdownMenuItem(
@@ -98,7 +90,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           );
                           final queueService =
                               getIt<NotificationQueueService>();
-                          await queueService.enqueueNotification(
+                          final sent = await queueService.enqueueNotification(
                             targetType: targetType,
                             targetId: widget.courseId,
                             title: title,
@@ -107,11 +99,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
                           navigator.pop();
                           scaffoldMessenger.showSnackBar(
-                            const SnackBar(
+                            SnackBar(
                               content: Text(
-                                'تم نشر الإعلان وإرسال الإشعار للطلاب بنجاح!',
+                                sent
+                                    ? 'تم نشر الإعلان وإرسال الإشعار للطلاب بنجاح!'
+                                    : 'تم حفظ الإعلان، لكن تعذر إرسال الإشعار. تحقق من ملف حساب الخدمة.',
                               ),
-                              backgroundColor: AppColors.success,
+                              backgroundColor:
+                                  sent ? AppColors.success : AppColors.warning,
                             ),
                           );
                         }
@@ -133,7 +128,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }) {
     final titleCtrl = TextEditingController(text: initialTitle);
     final bodyCtrl = TextEditingController(text: initialBody);
-    String targetType = initialTargetType;
+    String targetType = initialTargetType == 'course' ? 'course' : 'teacher';
     bool isSaving = false;
 
     showDialog(
@@ -173,18 +168,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           ),
                           items: [
                             const DropdownMenuItem(
-                              value: 'all',
-                              child: Text('جميع الطلاب (عام)'),
+                              value: 'teacher',
+                              child: Text('جميع طلابي في كل الكورسات'),
                             ),
-                            DropdownMenuItem(
-                              value: StudentGrade.firstSecondary.toValue(),
-                              child: const Text('طلاب أولى ثانوي فقط'),
-                            ),
-                            DropdownMenuItem(
-                              value: StudentGrade.secondSecondary.toValue(),
-                              child: const Text('طلاب تانية ثانوي فقط'),
-                            ),
-                            if (widget.courseId != null || initialTargetId != null)
+                            if (widget.courseId != null ||
+                                initialTargetId != null)
                               const DropdownMenuItem(
                                 value: 'course',
                                 child: Text('طلاب هذا الكورس فقط'),
@@ -205,61 +193,70 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       child: const Text('إلغاء'),
                     ),
                     ElevatedButton(
-                      onPressed: isSaving
-                          ? null
-                          : () async {
-                              final title = titleCtrl.text.trim();
-                              final body = bodyCtrl.text.trim();
-                              if (title.isEmpty || body.isEmpty) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('يرجى ملء جميع الحقول المطلوبة'),
-                                    backgroundColor: AppColors.error,
-                                  ),
-                                );
-                                return;
-                              }
-
-                              setDialogState(() => isSaving = true);
-                              try {
-                                final queueService =
-                                    getIt<NotificationQueueService>();
-                                await queueService.updateNotification(
-                                  docId: docId,
-                                  title: title,
-                                  body: body,
-                                  targetType: targetType,
-                                  targetId: initialTargetId ?? widget.courseId,
-                                );
-
-                                if (ctx.mounted) Navigator.pop(ctx);
-                                if (mounted) {
+                      onPressed:
+                          isSaving
+                              ? null
+                              : () async {
+                                final title = titleCtrl.text.trim();
+                                final body = bodyCtrl.text.trim();
+                                if (title.isEmpty || body.isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text('تم تحديث الإعلان بنجاح!'),
-                                      backgroundColor: AppColors.success,
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                setDialogState(() => isSaving = false);
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('فشل تحديث الإعلان: $e'),
+                                      content: Text(
+                                        'يرجى ملء جميع الحقول المطلوبة',
+                                      ),
                                       backgroundColor: AppColors.error,
                                     ),
                                   );
+                                  return;
                                 }
-                              }
-                            },
-                      child: isSaving
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('حفظ التعديلات'),
+
+                                setDialogState(() => isSaving = true);
+                                try {
+                                  final queueService =
+                                      getIt<NotificationQueueService>();
+                                  await queueService.updateNotification(
+                                    docId: docId,
+                                    title: title,
+                                    body: body,
+                                    targetType: targetType,
+                                    targetId:
+                                        initialTargetId ?? widget.courseId,
+                                  );
+
+                                  if (ctx.mounted) Navigator.pop(ctx);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'تم تحديث الإعلان بنجاح!',
+                                        ),
+                                        backgroundColor: AppColors.success,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  setDialogState(() => isSaving = false);
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('فشل تحديث الإعلان: $e'),
+                                        backgroundColor: AppColors.error,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                      child:
+                          isSaving
+                              ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                              : const Text('حفظ التعديلات'),
                     ),
                   ],
                 ),
@@ -270,44 +267,47 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   void _confirmDeleteNotification(String docId, String title) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('حذف الإعلان؟'),
-        content: Text('هل أنت متأكد من حذف الإعلان "$title" نهائياً؟'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('إلغاء'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('حذف الإعلان؟'),
+            content: Text('هل أنت متأكد من حذف الإعلان "$title" نهائياً؟'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    final queueService = getIt<NotificationQueueService>();
+                    await queueService.deleteNotification(docId);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('تم حذف الإعلان بنجاح.'),
+                          backgroundColor: AppColors.success,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('فشل حذف الإعلان: $e'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: const Text('تأكيد الحذف'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                final queueService = getIt<NotificationQueueService>();
-                await queueService.deleteNotification(docId);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('تم حذف الإعلان بنجاح.'),
-                      backgroundColor: AppColors.success,
-                    ),
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('فشل حذف الإعلان: $e'),
-                      backgroundColor: AppColors.error,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('تأكيد الحذف'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -339,16 +339,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           final docs = snapshot.data?.docs ?? [];
           final filtered =
               docs.where((d) {
-                if (widget.user.isAdmin) return true;
                 final data = d.data() as Map<String, dynamic>;
-                final targetType = data['targetType'] as String? ?? 'all';
+                final targetType = data['targetType'] as String? ?? '';
                 final targetId = data['targetId'] as String?;
-                if (targetType == 'all') return true;
-                if (targetType == StudentGrade.firstSecondary.toValue()) {
-                  return widget.user.grade == StudentGrade.firstSecondary;
+                final createdBy = data['createdBy'] as String?;
+                if (widget.user.isAdmin) {
+                  if (widget.user.isSuperAdmin) return true;
+                  return createdBy == widget.user.id ||
+                      (targetType == 'teacher' && targetId == widget.user.id) ||
+                      (targetType == 'course' && targetId == widget.courseId);
                 }
-                if (targetType == StudentGrade.secondSecondary.toValue()) {
-                  return widget.user.grade == StudentGrade.secondSecondary;
+                if (targetType == 'teacher') {
+                  return targetId == widget.user.ownerAdminId;
                 }
                 if (targetType == 'course') {
                   if (targetId == null ||
@@ -377,192 +379,191 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               padding: context.screenPadding,
               itemCount: filtered.length,
               itemBuilder: (context, index) {
-              final doc = filtered[index];
-              final data = doc.data() as Map<String, dynamic>;
-              final title = data['title'] as String? ?? 'إعلان';
-              final body = data['body'] as String? ?? '';
-              final targetType = data['targetType'] as String? ?? 'all';
-              final timestamp = data['createdAt'];
-              final hasBeenEdited = data['updatedAt'] != null;
+                final doc = filtered[index];
+                final data = doc.data() as Map<String, dynamic>;
+                final title = data['title'] as String? ?? 'إعلان';
+                final body = data['body'] as String? ?? '';
+                final targetType = data['targetType'] as String? ?? 'all';
+                final timestamp = data['createdAt'];
+                final hasBeenEdited = data['updatedAt'] != null;
 
-              String timeStr = 'مؤخراً';
-              if (timestamp is Timestamp) {
-                timeStr = DateTimeUtils.toShortDate(timestamp.toDate());
-              }
+                String timeStr = 'مؤخراً';
+                if (timestamp is Timestamp) {
+                  timeStr = DateTimeUtils.toShortDate(timestamp.toDate());
+                }
 
-              IconData icon = Icons.campaign_outlined;
-              Color iconColor = AppColors.secondary;
+                IconData icon = Icons.campaign_outlined;
+                Color iconColor = AppColors.secondary;
 
-              final lowerTitle = title.toLowerCase();
-              if (lowerTitle.contains('exam') ||
-                  lowerTitle.contains('quiz') ||
-                  lowerTitle.contains('امتحان') ||
-                  lowerTitle.contains('اختبار')) {
-                icon = Icons.assignment_outlined;
-                iconColor = AppColors.primary;
-              } else if (lowerTitle.contains('مذكرة') ||
-                  lowerTitle.contains('ملف') ||
-                  lowerTitle.contains('درس') ||
-                  lowerTitle.contains('slide')) {
-                icon = Icons.attach_file;
-                iconColor = AppColors.info;
-              } else if (lowerTitle.contains('bonus') ||
-                  lowerTitle.contains('بونص') ||
-                  lowerTitle.contains('مكافأة') ||
-                  lowerTitle.contains('نقاط')) {
-                icon = Icons.star_outline;
-                iconColor = AppColors.bonus;
-              }
+                final lowerTitle = title.toLowerCase();
+                if (lowerTitle.contains('exam') ||
+                    lowerTitle.contains('quiz') ||
+                    lowerTitle.contains('امتحان') ||
+                    lowerTitle.contains('اختبار')) {
+                  icon = Icons.assignment_outlined;
+                  iconColor = AppColors.primary;
+                } else if (lowerTitle.contains('مذكرة') ||
+                    lowerTitle.contains('ملف') ||
+                    lowerTitle.contains('درس') ||
+                    lowerTitle.contains('slide')) {
+                  icon = Icons.attach_file;
+                  iconColor = AppColors.info;
+                } else if (lowerTitle.contains('bonus') ||
+                    lowerTitle.contains('بونص') ||
+                    lowerTitle.contains('مكافأة') ||
+                    lowerTitle.contains('نقاط')) {
+                  icon = Icons.star_outline;
+                  iconColor = AppColors.bonus;
+                }
 
-              String targetLabel = 'عام - جميع الطلاب';
-              if (targetType == StudentGrade.firstSecondary.toValue()) {
-                targetLabel = 'أولى ثانوي';
-              } else if (targetType == StudentGrade.secondSecondary.toValue()) {
-                targetLabel = 'تانية ثانوي';
-              } else if (targetType == 'course') {
-                targetLabel = 'مجموعة الكورس';
-              } else if (targetType == 'student') {
-                targetLabel = 'إشعار خاص';
-              }
+                String targetLabel = 'جميع طلاب المعلم';
+                if (targetType == 'course') {
+                  targetLabel = 'مجموعة الكورس';
+                } else if (targetType == 'student') {
+                  targetLabel = 'إشعار خاص';
+                }
 
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.border),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: iconColor.withAlpha(20),
-                          borderRadius: BorderRadius.circular(10),
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: iconColor.withAlpha(20),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(icon, color: iconColor, size: 24),
                         ),
-                        child: Icon(icon, color: iconColor, size: 24),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    title,
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.textPrimary,
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      title,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textPrimary,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                Text(
-                                  timeStr,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textMuted,
-                                  ),
-                                ),
-                                if (hasBeenEdited) ...[
-                                  const SizedBox(width: 4),
-                                  const Text(
-                                    '(معدّل)',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: AppColors.warning,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              body,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textSecondary,
-                                height: 1.4,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.surfaceVariant,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    targetLabel,
+                                  Text(
+                                    timeStr,
                                     style: const TextStyle(
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textMuted,
                                     ),
                                   ),
-                                ),
-                                const Spacer(),
-                                if (widget.user.isAdmin) ...[
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.edit_outlined,
-                                      size: 19,
-                                      color: AppColors.primary,
+                                  if (hasBeenEdited) ...[
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      '(معدّل)',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: AppColors.warning,
+                                        fontWeight: FontWeight.w700,
+                                      ),
                                     ),
-                                    tooltip: 'تعديل الإعلان',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(
-                                      minWidth: 34,
-                                      minHeight: 34,
-                                    ),
-                                    onPressed: () => _showEditAnnouncementDialog(
-                                      docId: doc.id,
-                                      initialTitle: title,
-                                      initialBody: body,
-                                      initialTargetType: targetType,
-                                      initialTargetId: data['targetId'] as String?,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      size: 19,
-                                      color: AppColors.error,
-                                    ),
-                                    tooltip: 'حذف الإعلان',
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(
-                                      minWidth: 34,
-                                      minHeight: 34,
-                                    ),
-                                    onPressed: () => _confirmDeleteNotification(
-                                      doc.id,
-                                      title,
-                                    ),
-                                  ),
+                                  ],
                                 ],
-                              ],
-                            ),
-                          ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                body,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceVariant,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      targetLabel,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  if (widget.user.isAdmin) ...[
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        size: 19,
+                                        color: AppColors.primary,
+                                      ),
+                                      tooltip: 'تعديل الإعلان',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 34,
+                                        minHeight: 34,
+                                      ),
+                                      onPressed:
+                                          () => _showEditAnnouncementDialog(
+                                            docId: doc.id,
+                                            initialTitle: title,
+                                            initialBody: body,
+                                            initialTargetType: targetType,
+                                            initialTargetId:
+                                                data['targetId'] as String?,
+                                          ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        size: 19,
+                                        color: AppColors.error,
+                                      ),
+                                      tooltip: 'حذف الإعلان',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 34,
+                                        minHeight: 34,
+                                      ),
+                                      onPressed:
+                                          () => _confirmDeleteNotification(
+                                            doc.id,
+                                            title,
+                                          ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-        );
+                );
+              },
+            ),
+          );
         },
       ),
     );

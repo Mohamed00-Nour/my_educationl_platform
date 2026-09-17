@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:file_picker/file_picker.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/utils/url_service.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/responsive_layout.dart';
@@ -14,8 +14,10 @@ import '../../../quizzes/domain/repositories/quiz_repository.dart';
 import '../../../quizzes/presentation/screens/exam_result_screen.dart';
 import '../../../quizzes/presentation/screens/exam_taking_screen.dart';
 import '../../../quizzes/presentation/widgets/start_code_dialog.dart';
+import '../../../notifications/presentation/widgets/push_notification_fields.dart';
 import '../../domain/entities/lesson_entity.dart';
 import '../../domain/entities/lesson_material_entity.dart';
+import '../../domain/services/material_type_resolver.dart';
 import '../bloc/course_bloc.dart';
 import 'pdf_viewer_screen.dart';
 import 'video_player_screen.dart';
@@ -81,19 +83,40 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
     context.read<CourseBloc>().add(StreamCourseDetailsRequested(widget.lesson.courseId));
   }
 
-  void _showAddMaterialDialog(BuildContext context, LessonEntity currentLesson) {
-    final titleController = TextEditingController();
-    final urlController = TextEditingController();
-    final startPageController = TextEditingController();
-    final endPageController = TextEditingController();
-    final notesController = TextEditingController();
-    CourseMaterialType selectedType = CourseMaterialType.ministryBook;
+  Future<void> _showMaterialDialog(
+    BuildContext context,
+    LessonEntity currentLesson, {
+    LessonMaterialEntity? material,
+  }) async {
+    final isEditing = material != null;
+    final titleController = TextEditingController(text: material?.title ?? '');
+    final urlController = TextEditingController(text: material?.url ?? '');
+    final startPageController = TextEditingController(
+      text: material?.startPage?.toString() ?? '',
+    );
+    final endPageController = TextEditingController(
+      text: material?.endPage?.toString() ?? '',
+    );
+    final notesController = TextEditingController(text: material?.notes ?? '');
+    CourseMaterialType selectedType = material?.type ?? CourseMaterialType.link;
+    String? formError;
+    final notificationDraft = PushNotificationDraft(
+      defaultTitle: 'ملحق تعليمي جديد',
+      defaultBody: 'تمت إضافة مادة تعليمية جديدة إلى درس ${currentLesson.title}.',
+    );
+    ModalRoute<dynamic>? dialogRoute;
 
-    showDialog(
+    await showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('إضافة مادة تعليمية أو ملحق'),
+      builder: (ctx) {
+        dialogRoute ??= ModalRoute.of(ctx);
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(
+            isEditing
+                ? 'تعديل المادة التعليمية أو الملحق'
+                : 'إضافة مادة تعليمية أو ملحق',
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -110,7 +133,8 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                 DropdownButtonFormField<CourseMaterialType>(
                   value: selectedType,
                   decoration: const InputDecoration(
-                    labelText: 'نوع المادة التعليمية',
+                    labelText: 'تصنيف المادة (تلميح فقط)',
+                    helperText: 'سيحدد التطبيق طريقة الفتح تلقائياً من الملف أو الرابط',
                   ),
                   items: CourseMaterialType.values.map((type) {
                     return DropdownMenuItem(
@@ -133,55 +157,70 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: urlController,
+                  onChanged: (value) {
+                    final detected = MaterialTypeResolver.detect(value);
+                    setDialogState(() {
+                      formError = null;
+                      if (detected != null) selectedType = detected;
+                    });
+                  },
                   decoration: const InputDecoration(
                     labelText: 'رابط الملف أو الصفحة (URL) *',
-                    hintText: 'https://... أو اختر ملفاً من الجهاز أدناه',
+                    hintText: 'https://drive.google.com/...',
                   ),
                   keyboardType: TextInputType.url,
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withAlpha(18),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.info.withAlpha(70)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.cloud_outlined, size: 18, color: AppColors.info),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'ترفع جميع الملحقات إلى Google Drive. بعد الرفع اجعل الصلاحية '
+                          '«أي شخص لديه الرابط»، ثم الصق رابط المشاركة هنا.',
+                          style: TextStyle(fontSize: 12, height: 1.45, color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    icon: const Icon(Icons.file_upload_outlined, size: 18),
-                    label: const Text('اختيار ملف من الجهاز (PDF / HTML / Video)'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primaryLight,
-                      side: const BorderSide(color: AppColors.primaryLight),
-                    ),
+                    icon: const Icon(Icons.add_to_drive_rounded, size: 18),
+                    label: const Text('فتح Google Drive لرفع الملف'),
                     onPressed: () async {
-                      try {
-                        final result = await FilePicker.platform.pickFiles(
-                          type: FileType.custom,
-                          allowedExtensions: ['pdf', 'html', 'htm', 'mp4', 'mov', 'webm', 'mkv'],
-                        );
-                        if (result != null && result.files.isNotEmpty) {
-                          final file = result.files.first;
-                          final path = file.path;
-                          final name = file.name;
-                          if (path != null) {
-                            setDialogState(() {
-                              urlController.text = path;
-                              if (titleController.text.trim().isEmpty) {
-                                titleController.text = name.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '');
-                              }
-                              final ext = name.split('.').last.toLowerCase();
-                              if (ext == 'pdf') {
-                                selectedType = CourseMaterialType.pdf;
-                              } else if (ext == 'html' || ext == 'htm') {
-                                selectedType = CourseMaterialType.interactiveHtml;
-                              } else if (['mp4', 'mov', 'webm', 'mkv'].contains(ext)) {
-                                selectedType = CourseMaterialType.video;
-                              }
-                            });
-                          }
-                        }
-                      } catch (e) {
-                        // ignore error
+                      final opened = await UrlService.openExternalUrl(
+                        'https://drive.google.com/drive/my-drive',
+                      );
+                      if (!opened && ctx.mounted) {
+                        setDialogState(() {
+                          formError = 'تعذر فتح Google Drive على هذا الجهاز.';
+                        });
                       }
                     },
                   ),
                 ),
+                if (!isEditing)
+                  PushNotificationFields(draft: notificationDraft),
+                if (formError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    formError!,
+                    style: const TextStyle(color: AppColors.error, fontSize: 12),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 if (selectedType == CourseMaterialType.ministryBook ||
                     selectedType == CourseMaterialType.pdf ||
@@ -231,38 +270,99 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
             ElevatedButton(
               onPressed: () {
                 final title = titleController.text.trim();
-                final url = urlController.text.trim();
-                if (title.isNotEmpty && url.isNotEmpty) {
+                final rawUrl = urlController.text.trim();
+                if (title.isEmpty) {
+                  setDialogState(() => formError = 'يرجى كتابة عنوان الملحق.');
+                  return;
+                }
+                if (!UrlService.isShareableWebUrl(rawUrl)) {
+                  setDialogState(() {
+                    formError = 'يرجى إدخال رابط مشاركة صحيح يبدأ بـ https://. '
+                        'لا يمكن مشاركة مسار ملف محلي مع الطلاب.';
+                  });
+                  return;
+                }
+                if (!isEditing) {
+                  final notificationError = notificationDraft.validate();
+                  if (notificationError != null) {
+                    setDialogState(() => formError = notificationError);
+                    return;
+                  }
+                }
+
+                final url = UrlService.normalizeUrl(rawUrl);
+                {
                   final startPage = int.tryParse(startPageController.text.trim());
                   final endPage = int.tryParse(endPageController.text.trim());
                   final notes = notesController.text.trim().isNotEmpty
                       ? notesController.text.trim()
                       : null;
 
-                  final newMaterial = LessonMaterialEntity(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  final savedMaterial = LessonMaterialEntity(
+                    id: material?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
                     title: title,
-                    type: selectedType,
+                    type: MaterialTypeResolver.typeForStorage(
+                      url,
+                      hint: selectedType,
+                    ),
                     url: url,
                     startPage: startPage,
                     endPage: endPage,
                     notes: notes,
                   );
 
-                  final updatedMaterials = List<LessonMaterialEntity>.from(currentLesson.materials)
-                    ..add(newMaterial);
+                  final updatedMaterials = List<LessonMaterialEntity>.from(
+                    currentLesson.materials,
+                  );
+                  if (isEditing) {
+                    final materialIndex = updatedMaterials.indexWhere(
+                      (item) => item.id == material!.id,
+                    );
+                    if (materialIndex >= 0) {
+                      updatedMaterials[materialIndex] = savedMaterial;
+                    } else {
+                      setDialogState(() {
+                        formError = 'تعذر العثور على الملحق. أغلق النافذة وحاول مرة أخرى.';
+                      });
+                      return;
+                    }
+                  } else {
+                    updatedMaterials.add(savedMaterial);
+                  }
                   final updatedLesson = currentLesson.copyWith(materials: updatedMaterials);
 
-                  context.read<CourseBloc>().add(UpdateLessonRequested(updatedLesson));
+                  context.read<CourseBloc>().add(
+                    UpdateLessonRequested(
+                      updatedLesson,
+                      notification: isEditing
+                          ? null
+                          : notificationDraft.buildRequest(
+                              courseId: currentLesson.courseId,
+                              contentType: 'material',
+                              contentId: savedMaterial.id,
+                            ),
+                    ),
+                  );
                   Navigator.pop(ctx);
                 }
               },
-              child: const Text('إضافة'),
+              child: Text(isEditing ? 'حفظ التعديلات' : 'إضافة'),
             ),
           ],
-        ),
-      ),
+          ),
+        );
+      },
     );
+
+    // showDialog completes when pop starts. Wait until the reverse transition
+    // removes the dialog widgets before disposing their controllers.
+    await dialogRoute?.completed;
+    titleController.dispose();
+    urlController.dispose();
+    startPageController.dispose();
+    endPageController.dispose();
+    notesController.dispose();
+    notificationDraft.dispose();
   }
 
   void _confirmDeleteMaterial(
@@ -323,7 +423,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                 IconButton(
                   icon: const Icon(Icons.add_link_rounded),
                   tooltip: 'إضافة ملحق أو مادة تعليمية',
-                  onPressed: () => _showAddMaterialDialog(context, activeLesson),
+                  onPressed: () => _showMaterialDialog(context, activeLesson),
                 ),
             ],
           ),
@@ -436,7 +536,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                       TextButton.icon(
                         icon: const Icon(Icons.add, size: 16),
                         label: const Text('إضافة ملحق'),
-                        onPressed: () => _showAddMaterialDialog(context, activeLesson),
+                        onPressed: () => _showMaterialDialog(context, activeLesson),
                       ),
                   ],
                 ),
@@ -470,6 +570,11 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                     (m) => _MaterialCard(
                       material: m,
                       isAdmin: widget.user.isAdmin,
+                      onEdit: () => _showMaterialDialog(
+                        context,
+                        activeLesson,
+                        material: m,
+                      ),
                       onDelete: () => _confirmDeleteMaterial(context, activeLesson, m),
                     ),
                   ),
@@ -541,43 +646,42 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
 class _MaterialCard extends StatelessWidget {
   final LessonMaterialEntity material;
   final bool isAdmin;
+  final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
   const _MaterialCard({
     required this.material,
     this.isAdmin = false,
+    this.onEdit,
     this.onDelete,
   });
 
+  bool get _isCloudPreview => UrlService.isGoogleHostedFileUrl(material.url);
+
   bool get _isPdf {
-    final urlLower = material.url.toLowerCase().trim();
-    return material.type == CourseMaterialType.ministryBook ||
-        material.type == CourseMaterialType.summaryPdf ||
-        material.type == CourseMaterialType.pdf ||
-        urlLower.endsWith('.pdf') ||
-        urlLower.contains('.pdf?');
+    return MaterialTypeResolver.detect(material.url) == CourseMaterialType.pdf;
   }
 
   bool get _isVideo {
-    final urlLower = material.url.toLowerCase().trim();
-    return material.type == CourseMaterialType.video ||
-        urlLower.endsWith('.mp4') ||
-        urlLower.endsWith('.mov') ||
-        urlLower.endsWith('.webm') ||
-        urlLower.endsWith('.mkv') ||
-        urlLower.contains('youtube.com') ||
-        urlLower.contains('youtu.be');
+    return MaterialTypeResolver.detect(material.url) == CourseMaterialType.video;
   }
 
   bool get _isHtml {
-    final urlLower = material.url.toLowerCase().trim();
-    return material.type == CourseMaterialType.interactiveHtml ||
-        urlLower.endsWith('.html') ||
-        urlLower.endsWith('.htm');
+    return MaterialTypeResolver.detect(material.url) ==
+        CourseMaterialType.interactiveHtml;
   }
 
   void _openMaterial(BuildContext context) {
-    if (_isPdf) {
+    // Drive share URLs are web pages, not direct PDF/video URLs. Google preview
+    // streams large files without downloading the entire file into the app.
+    if (_isCloudPreview) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HtmlViewerScreen(material: material),
+        ),
+      );
+    } else if (_isPdf) {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -599,23 +703,19 @@ class _MaterialCard extends StatelessWidget {
         ),
       );
     } else {
-      _launchExternal(context);
-    }
-  }
-
-  Future<void> _launchExternal(BuildContext context) async {
-    final opened = await UrlService.openExternalUrl(material.url);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تعذر فتح الرابط الخارجي. يرجى التحقق من صحة الرابط.'),
-          backgroundColor: AppColors.error,
+      // Normal web pages and unknown share providers are attempted in-app;
+      // the viewer always exposes an external-browser fallback.
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HtmlViewerScreen(material: material),
         ),
       );
     }
   }
 
   IconData _getActionIcon() {
+    if (_isCloudPreview) return Icons.visibility_outlined;
     if (_isPdf) return Icons.visibility_outlined;
     if (_isVideo) return Icons.play_circle_fill_rounded;
     if (_isHtml) return Icons.code_rounded;
@@ -623,10 +723,11 @@ class _MaterialCard extends StatelessWidget {
   }
 
   String _getActionTooltip() {
+    if (_isCloudPreview) return 'معاينة الملف السحابي';
     if (_isPdf) return 'عرض وقراءة المستند';
     if (_isVideo) return 'تشغيل الفيديو';
     if (_isHtml) return 'عرض النشاط التفاعلي';
-    return 'زيارة الرابط الإلكتروني';
+    return 'فتح الرابط داخل التطبيق';
   }
 
   @override
@@ -706,6 +807,12 @@ class _MaterialCard extends StatelessWidget {
               tooltip: _getActionTooltip(),
               onPressed: () => _openMaterial(context),
             ),
+            if (isAdmin && onEdit != null)
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 18, color: AppColors.info),
+                tooltip: 'تعديل الملحق',
+                onPressed: onEdit,
+              ),
             if (isAdmin && onDelete != null)
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
@@ -768,7 +875,9 @@ class _LessonQuizCardState extends State<_LessonQuizCard> {
       );
       final quizAttempts = attempts.where((a) => a.examId == quizId).toList();
 
-      final hasPassed = quizAttempts.any((a) => a.isPassed);
+      final hasPassed = quizAttempts.any(
+        (a) => PerformanceRating.fromPercentage(a.percentage).isSuccessful,
+      );
       final hasConsumedRetries = quizAttempts.length >= quiz.maxAttempts;
       final isDeadlinePassed =
           quiz.availableUntil != null &&

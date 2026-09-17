@@ -1,9 +1,36 @@
 import 'package:flutter/material.dart';
+import '../utils/performance_rating.dart';
 
 /// Duolingo Dark Mode Color System
 /// Authentic color palette inspired by Duolingo's dark design language,
 /// featuring deep slate midnight backgrounds, chunky borders, and vibrant playful accents.
 class AppColors {
+  static Color forPerformance(PerformanceBand band) {
+    switch (band) {
+      case PerformanceBand.needsPractice:
+        return error;
+      case PerformanceBand.good:
+        return orange;
+      case PerformanceBand.veryGood:
+        return success;
+      case PerformanceBand.excellent:
+        return primaryLight;
+    }
+  }
+
+  static Color backgroundForPerformance(PerformanceBand band) {
+    switch (band) {
+      case PerformanceBand.needsPractice:
+        return errorLight;
+      case PerformanceBand.good:
+        return orangeLight;
+      case PerformanceBand.veryGood:
+        return successLight;
+      case PerformanceBand.excellent:
+        return primary.withAlpha(55);
+    }
+  }
+
   // Background & Surfaces (Midnight Slate)
   static const Color background = Color(0xFF131F24); // Deep dark background
   static const Color surface = Color(0xFF202F36); // Duolingo dark card surface

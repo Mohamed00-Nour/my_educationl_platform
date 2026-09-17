@@ -4,6 +4,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_time_utils.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/responsive_layout.dart';
 import '../../domain/entities/exam_attempt_entity.dart';
@@ -120,12 +121,10 @@ class _ExamSubmissionsSheetState extends State<ExamSubmissionsSheet> {
   }
 
   bool _isPassed(ExamAttemptEntity a) {
-    return a.isPassed ||
-        QuizEntity.calculateIsPassed(
-          score: a.score,
-          totalMarks: widget.quiz.totalMarks > 0 ? widget.quiz.totalMarks : 1,
-          passingScore: widget.quiz.passingScore,
-        );
+    return PerformanceRating.fromScore(
+      score: a.score,
+      totalMarks: widget.quiz.totalMarks > 0 ? widget.quiz.totalMarks : 1,
+    ).isSuccessful;
   }
 
   List<ExamAttemptEntity> get _filteredAttempts {
@@ -383,7 +382,7 @@ class _ExamSubmissionsSheetState extends State<ExamSubmissionsSheet> {
                                       ),
                                       const SizedBox(width: 6),
                                       _FilterChip(
-                                        label: 'راسب (${totalAttempts - passedCount})',
+                                        label: 'يحتاج تدريب (${totalAttempts - passedCount})',
                                         isSelected: _filter == 'failed',
                                         onTap: () => setState(() => _filter = 'failed'),
                                       ),
@@ -393,7 +392,19 @@ class _ExamSubmissionsSheetState extends State<ExamSubmissionsSheet> {
 
                                   // Attempt Cards
                                   ..._filteredAttempts.map((attempt) {
-                                    final isPassed = _isPassed(attempt);
+                                    final performance =
+                                        PerformanceRating.fromScore(
+                                          score: attempt.score,
+                                          totalMarks:
+                                              widget.quiz.totalMarks > 0
+                                                  ? widget.quiz.totalMarks
+                                                  : 1,
+                                        );
+                                    final isPassed = performance.isSuccessful;
+                                    final performanceColor =
+                                        AppColors.forPerformance(
+                                          performance.band,
+                                        );
                                     final studentName = _studentNames[attempt.studentId] ??
                                         'طالب (${attempt.studentId.length > 6 ? attempt.studentId.substring(0, 6) : attempt.studentId})';
                                     final minutesUsed = attempt.durationSecondsUsed ~/ 60;
@@ -404,9 +415,7 @@ class _ExamSubmissionsSheetState extends State<ExamSubmissionsSheet> {
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(14),
                                         side: BorderSide(
-                                          color: isPassed
-                                              ? AppColors.success.withAlpha(40)
-                                              : AppColors.error.withAlpha(40),
+                                          color: performanceColor.withAlpha(40),
                                         ),
                                       ),
                                       child: Padding(
@@ -417,19 +426,14 @@ class _ExamSubmissionsSheetState extends State<ExamSubmissionsSheet> {
                                             Container(
                                               padding: const EdgeInsets.all(10),
                                               decoration: BoxDecoration(
-                                                color: (isPassed
-                                                        ? AppColors.success
-                                                        : AppColors.error)
-                                                    .withAlpha(25),
+                                                color: performanceColor.withAlpha(25),
                                                 shape: BoxShape.circle,
                                               ),
                                               child: Icon(
                                                 isPassed
                                                     ? Icons.check
                                                     : Icons.close,
-                                                color: isPassed
-                                                    ? AppColors.success
-                                                    : AppColors.error,
+                                                color: performanceColor,
                                                 size: 20,
                                               ),
                                             ),
@@ -479,10 +483,7 @@ class _ExamSubmissionsSheetState extends State<ExamSubmissionsSheet> {
                                                   padding: const EdgeInsets.symmetric(
                                                       horizontal: 10, vertical: 4),
                                                   decoration: BoxDecoration(
-                                                    color: (isPassed
-                                                            ? AppColors.success
-                                                            : AppColors.error)
-                                                        .withAlpha(20),
+                                                    color: performanceColor.withAlpha(20),
                                                     borderRadius: BorderRadius.circular(8),
                                                   ),
                                                   child: Text(
@@ -490,21 +491,25 @@ class _ExamSubmissionsSheetState extends State<ExamSubmissionsSheet> {
                                                     style: TextStyle(
                                                       fontSize: 14,
                                                       fontWeight: FontWeight.w800,
-                                                      color: isPassed
-                                                          ? AppColors.success
-                                                          : AppColors.error,
+                                                      color: performanceColor,
                                                     ),
                                                   ),
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                  '${attempt.percentage.toStringAsFixed(0)}%',
+                                                  '${performance.percentage.toStringAsFixed(0)}%',
                                                   style: TextStyle(
                                                     fontSize: 11,
                                                     fontWeight: FontWeight.w600,
-                                                    color: isPassed
-                                                        ? AppColors.success
-                                                        : AppColors.error,
+                                                    color: performanceColor,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  performance.labelArabic,
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: performanceColor,
                                                   ),
                                                 ),
                                               ],

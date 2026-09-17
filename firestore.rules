@@ -27,6 +27,12 @@ service cloud.firestore {
       return isAuthenticated() && getUserData().role == 'admin';
     }
 
+    function canManageStudent(studentId) {
+      return isSuperAdmin()
+        || (isStrictAdmin()
+          && get(/databases/$(database)/documents/users/$(studentId)).data.ownerAdminId == request.auth.uid);
+    }
+
     // 1. Users collection & Tenant Assignment
     match /users/{userId} {
       allow read: if isAuthenticated();
@@ -93,7 +99,17 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (resource.data.studentId == request.auth.uid || isAdmin());
       // Students can only create attempts for themselves; cannot tamper after write
       allow create: if isAuthenticated() && request.resource.data.studentId == request.auth.uid;
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin()
+        && canManageStudent(resource.data.studentId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'score',
+          'percentage',
+          'isPassed',
+          'manuallyEditedAt',
+          'manuallyEditedBy'
+        ])
+        && request.resource.data.manuallyEditedBy == request.auth.uid;
+      allow delete: if isAdmin() && canManageStudent(resource.data.studentId);
     }
 
     // 6. Question Bank
@@ -116,7 +132,22 @@ service cloud.firestore {
     // 9. Notifications Queue
     match /notifications_queue/{notificationId} {
       allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow create: if isAdmin()
+        && (
+          request.resource.data.targetType != 'course'
+          || isSuperAdmin()
+          || (
+            request.resource.data.targetId is string
+            && (
+              get(
+                /databases/$(database)/documents/courses/$(request.resource.data.targetId)
+              ).data.ownerAdminId == request.auth.uid
+              || get(
+                /databases/$(database)/documents/courses/$(request.resource.data.targetId)
+              ).data.ownerAdminId == null
+            )
+          )
+        );
       allow update, delete: if false; 
     }
   }

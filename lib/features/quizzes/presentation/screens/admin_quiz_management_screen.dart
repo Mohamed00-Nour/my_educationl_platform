@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/responsive_layout.dart';
 import '../../../auth/domain/entities/user_entity.dart';
@@ -903,7 +904,7 @@ class _AdminQuizCard extends StatelessWidget {
                 _SpecItem(
                   icon: Icons.grade_outlined,
                   text:
-                      '${quiz.totalMarks} درجات (النجاح: ${quiz.passingScore > quiz.totalMarks || (quiz.passingScore >= 40 && quiz.passingScore <= 100) ? '${quiz.passingScore}%' : '${quiz.passingScore}'})',
+                      '${quiz.totalMarks} درجات • النجاح من ${PerformanceRating.passThreshold.toStringAsFixed(0)}%',
                 ),
                 _SpecItem(
                   icon: Icons.repeat_outlined,

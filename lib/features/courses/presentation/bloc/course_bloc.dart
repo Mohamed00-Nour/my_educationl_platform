@@ -6,6 +6,8 @@ import '../../domain/entities/course_import_schema.dart';
 import '../../domain/entities/lesson_entity.dart';
 import '../../domain/entities/unit_entity.dart';
 import '../../domain/repositories/course_repository.dart';
+import '../../../notifications/data/services/notification_queue_service.dart';
+import '../../../notifications/domain/entities/course_notification_request.dart';
 
 // ================= EVENTS =================
 abstract class CourseEvent extends Equatable {
@@ -95,9 +97,10 @@ class DeleteCourseRequested extends CourseEvent {
 // Unit CRUD & Reorder
 class CreateUnitRequested extends CourseEvent {
   final UnitEntity unit;
-  const CreateUnitRequested(this.unit);
+  final CourseNotificationRequest? notification;
+  const CreateUnitRequested(this.unit, {this.notification});
   @override
-  List<Object?> get props => [unit];
+  List<Object?> get props => [unit, notification];
 }
 
 class UpdateUnitRequested extends CourseEvent {
@@ -134,16 +137,18 @@ class ReorderUnitsRequested extends CourseEvent {
 // Lesson CRUD & Reorder
 class CreateLessonRequested extends CourseEvent {
   final LessonEntity lesson;
-  const CreateLessonRequested(this.lesson);
+  final CourseNotificationRequest? notification;
+  const CreateLessonRequested(this.lesson, {this.notification});
   @override
-  List<Object?> get props => [lesson];
+  List<Object?> get props => [lesson, notification];
 }
 
 class UpdateLessonRequested extends CourseEvent {
   final LessonEntity lesson;
-  const UpdateLessonRequested(this.lesson);
+  final CourseNotificationRequest? notification;
+  const UpdateLessonRequested(this.lesson, {this.notification});
   @override
-  List<Object?> get props => [lesson];
+  List<Object?> get props => [lesson, notification];
 }
 
 class DeleteLessonRequested extends CourseEvent {
@@ -251,11 +256,16 @@ class CourseError extends CourseState {
 // ================= BLOC =================
 class CourseBloc extends Bloc<CourseEvent, CourseState> {
   final CourseRepository _courseRepository;
+  final NotificationQueueService? _notificationQueueService;
   StreamSubscription<List<CourseEntity>>? _coursesSubscription;
   StreamSubscription<List<UnitEntity>>? _unitsSubscription;
   StreamSubscription<List<LessonEntity>>? _lessonsSubscription;
 
-  CourseBloc(this._courseRepository) : super(CourseInitial()) {
+  CourseBloc(
+    this._courseRepository, {
+    NotificationQueueService? notificationQueueService,
+  })  : _notificationQueueService = notificationQueueService,
+        super(CourseInitial()) {
     on<FetchCoursesRequested>(_onFetchCoursesRequested);
     on<SelectCourseRequested>(_onSelectCourseRequested);
     on<FetchLessonsForUnitRequested>(_onFetchLessonsForUnitRequested);
@@ -489,7 +499,13 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
     Emitter<CourseState> emit,
   ) async {
     try {
-      await _courseRepository.createUnit(event.unit);
+      final createdUnit = await _courseRepository.createUnit(event.unit);
+      final notification = event.notification?.withPayload({
+        'contentId': createdUnit.id,
+      });
+      if (notification != null) {
+        await _notificationQueueService?.enqueueCourseNotification(notification);
+      }
       if (state is CourseLoaded) {
         final current = state as CourseLoaded;
         final updatedUnits = await _courseRepository.getUnits(event.unit.courseId);
@@ -569,7 +585,13 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
     Emitter<CourseState> emit,
   ) async {
     try {
-      await _courseRepository.createLesson(event.lesson);
+      final createdLesson = await _courseRepository.createLesson(event.lesson);
+      final notification = event.notification?.withPayload({
+        'contentId': createdLesson.id,
+      });
+      if (notification != null) {
+        await _notificationQueueService?.enqueueCourseNotification(notification);
+      }
       if (state is CourseLoaded) {
         final current = state as CourseLoaded;
         final lessons = await _courseRepository.getLessons(event.lesson.unitId);
@@ -594,6 +616,11 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
   ) async {
     try {
       await _courseRepository.updateLesson(event.lesson);
+      if (event.notification != null) {
+        await _notificationQueueService?.enqueueCourseNotification(
+          event.notification!,
+        );
+      }
       if (state is CourseLoaded) {
         final current = state as CourseLoaded;
         final lessons = await _courseRepository.getLessons(event.lesson.unitId);
@@ -725,4 +752,3 @@ class CourseBloc extends Bloc<CourseEvent, CourseState> {
     return super.close();
   }
 }
-

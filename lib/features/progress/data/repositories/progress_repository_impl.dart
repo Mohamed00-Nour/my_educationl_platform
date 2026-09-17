@@ -1,5 +1,6 @@
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/errors/failures.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../attendance/domain/entities/attendance_record.dart';
 import '../../../attendance/domain/repositories/attendance_repository.dart';
 import '../../../evaluations/domain/repositories/evaluation_repository.dart';
@@ -94,12 +95,15 @@ class ProgressRepositoryImpl implements ProgressRepository {
       double examSum = 0.0;
 
       for (final a in attempts) {
+        final normalizedPercentage = PerformanceRating.fromPercentage(
+          a.percentage,
+        ).percentage;
         if (a.durationSecondsUsed >= 1800) {
           examCount++;
-          examSum += a.percentage;
+          examSum += normalizedPercentage;
         } else {
           quizCount++;
-          quizSum += a.percentage;
+          quizSum += normalizedPercentage;
         }
       }
 

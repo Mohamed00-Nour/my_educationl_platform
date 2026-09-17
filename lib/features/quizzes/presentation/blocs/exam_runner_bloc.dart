@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../domain/entities/exam_attempt_entity.dart';
 import '../../domain/entities/local_attempt_entity.dart';
 import '../../domain/entities/question_entity.dart';
@@ -293,7 +294,9 @@ class ExamRunnerBloc extends Bloc<ExamRunnerEvent, ExamRunnerState> {
       );
       final examAttempts =
           pastAttempts.where((a) => a.examId == event.quizId).toList();
-      final hasPassed = examAttempts.any((a) => a.isPassed);
+      final hasPassed = examAttempts.any(
+        (a) => PerformanceRating.fromPercentage(a.percentage).isSuccessful,
+      );
       if (hasPassed || examAttempts.length >= quiz.maxAttempts) {
         emit(
           ExamRunnerErrorState(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/widgets/empty_state_view.dart';
 import '../../../../core/widgets/responsive_layout.dart';
 import '../../domain/repositories/progress_repository.dart';
@@ -102,6 +103,12 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
 
           if (state is StudentProgressLoaded) {
             final s = state.summary;
+            final performance = PerformanceRating.fromPercentage(
+              s.finalCompositeScore,
+            );
+            final performanceColor = AppColors.forPerformance(
+              performance.band,
+            );
 
             final trophyTitle = _selectedPeriod == 'هذا الشهر'
                 ? 'تقييم هذا الشهر'
@@ -265,8 +272,8 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                           const SizedBox(height: 8),
                           Text(
                             '${s.finalCompositeScore}%',
-                            style: const TextStyle(
-                              color: AppColors.primary,
+                            style: TextStyle(
+                              color: performanceColor,
                               fontSize: 48,
                               fontWeight: FontWeight.w900,
                               letterSpacing: -1,
@@ -283,7 +290,7 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                               color: AppColors.surfaceVariant,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: AppColors.primary.withAlpha(80),
+                                color: performanceColor.withAlpha(80),
                                 width: 1.5,
                               ),
                             ),
@@ -294,13 +301,9 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                                   ? (_selectedPeriod == 'الكل (تراكمي)'
                                       ? 'لا توجد بيانات تقييم بعد'
                                       : 'لا توجد نشاطات مسجلة خلال هذه الفترة')
-                                  : s.finalCompositeScore >= 85
-                                      ? 'مستوى دراسي ممتاز'
-                                      : s.finalCompositeScore >= 70
-                                          ? 'مستوى جيد ومتقدم'
-                                          : 'يحتاج إلى مزيد من التدريب',
-                              style: const TextStyle(
-                                color: AppColors.primary,
+                                  : performance.labelArabic,
+                              style: TextStyle(
+                                color: performanceColor,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w800,
                                 fontFamily: 'Cairo',

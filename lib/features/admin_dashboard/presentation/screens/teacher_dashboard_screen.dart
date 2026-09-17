@@ -19,6 +19,7 @@ import '../../../quizzes/presentation/screens/admin_quiz_management_screen.dart'
 import '../../../quizzes/presentation/screens/ai_import_screen.dart';
 import '../../../quizzes/presentation/screens/question_bank_screen.dart';
 import '../../../reports/presentation/screens/parent_report_screen.dart';
+import '../../../student_management/presentation/screens/student_management_screen.dart';
 import 'super_admin_management_screen.dart';
 
 class TeacherDashboardScreen extends StatefulWidget {
@@ -708,6 +709,22 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> {
                   desktop: 1.5,
                 ),
                 children: [
+                  _ModuleCard(
+                    title: 'إدارة الطلاب',
+                    subtitle: 'تعديل البيانات والصفوف والدرجات والاختبارات',
+                    icon: Icons.manage_accounts_outlined,
+                    color: AppColors.secondary,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => StudentManagementScreen(
+                            admin: widget.user,
+                          ),
+                        ),
+                      ).then((_) => _loadDashboardData());
+                    },
+                  ),
                   _ModuleCard(
                     title: 'المناهج والدروس',
                     subtitle: 'الكورسات، الوحدات والمذكرات',

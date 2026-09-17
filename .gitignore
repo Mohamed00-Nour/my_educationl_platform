@@ -53,4 +53,5 @@ credentials.json
 # Ignored JSON files in assets and assets/seed
 assets/*.json
 assets/seed/*.json
+assets/secrets/*.json
 

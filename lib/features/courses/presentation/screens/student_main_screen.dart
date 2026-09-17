@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/empty_state_view.dart';
 import '../../../auth/domain/entities/user_entity.dart';
@@ -297,7 +298,9 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
 
     // Check if the student has already passed or consumed allowed attempts
     final attempts = _attemptsByQuizId[quiz.id] ?? [];
-    final hasPassed = attempts.any((a) => a.isPassed);
+    final hasPassed = attempts.any(
+      (a) => PerformanceRating.fromPercentage(a.percentage).isSuccessful,
+    );
     final hasConsumedRetries = attempts.length >= effectiveQuiz.maxAttempts;
     final isDeadlinePassed =
         effectiveQuiz.availableUntil != null &&
@@ -420,7 +423,12 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
                 final isExam = quiz.isFullExam;
 
                 final attempts = _attemptsByQuizId[quiz.id] ?? [];
-                final hasPassed = attempts.any((a) => a.isPassed);
+                final hasPassed = attempts.any(
+                  (a) =>
+                      PerformanceRating.fromPercentage(
+                        a.percentage,
+                      ).isSuccessful,
+                );
                 final hasConsumedRetries =
                     attempts.length >= quiz.maxAttempts;
                 final isDeadlinePassed =

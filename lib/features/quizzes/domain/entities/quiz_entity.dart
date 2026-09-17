@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/start_code_utils.dart';
+import '../../../../core/utils/performance_rating.dart';
 import 'question_entity.dart';
 
 enum QuizType {
@@ -55,7 +56,7 @@ class QuizEntity extends Equatable {
     this.lessonId,
     this.durationMinutes = 15,
     this.totalMarks = 10,
-    this.passingScore = 6,
+    this.passingScore = 50,
     this.maxAttempts = 1,
     this.availableFrom,
     this.availableUntil,
@@ -208,32 +209,17 @@ class QuizEntity extends Equatable {
     startCodeSalt,
   ];
 
-  /// Computes whether a score meets the passing requirement for a quiz.
-  /// Accurately handles passingScore configured as a percentage (%) (e.g. 50%, 60%)
-  /// as well as raw marks thresholds (e.g. 2 out of 3, 6 out of 10).
+  /// Uses the platform-wide percentage policy. [passingScore] remains in the
+  /// signature for stored-data compatibility, but ambiguous raw-mark values no
+  /// longer change the result.
   static bool calculateIsPassed({
     required int score,
     required int totalMarks,
     required int passingScore,
   }) {
-    if (totalMarks <= 0) return true;
-    if (passingScore <= 0) return true;
-
-    final percentage = (score / totalMarks) * 100.0;
-
-    // Case 1: passingScore is greater than totalMarks (e.g. passingScore = 60%, totalMarks = 3).
-    // In this case, passingScore is mathematically guaranteed to be a percentage.
-    if (passingScore > totalMarks) {
-      return percentage >= passingScore;
-    }
-
-    // Case 2: passingScore is in typical percentage threshold range (40%..100%).
-    // The student passes if percentage meets passingScore OR if raw score meets passingScore.
-    if (passingScore >= 40 && passingScore <= 100) {
-      return percentage >= passingScore || score >= passingScore;
-    }
-
-    // Case 3: passingScore is a small number (e.g. 2 marks out of 3, or 6 marks out of 10).
-    return score >= passingScore;
+    return PerformanceRating.fromScore(
+      score: score,
+      totalMarks: totalMarks,
+    ).isSuccessful;
   }
 }

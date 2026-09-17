@@ -3,15 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/url_service.dart';
+import '../../data/services/remote_html_loader.dart';
 import '../../domain/entities/lesson_material_entity.dart';
 
 class HtmlViewerScreen extends StatefulWidget {
   final LessonMaterialEntity material;
 
-  const HtmlViewerScreen({
-    super.key,
-    required this.material,
-  });
+  const HtmlViewerScreen({super.key, required this.material});
 
   @override
   State<HtmlViewerScreen> createState() => _HtmlViewerScreenState();
@@ -19,6 +17,7 @@ class HtmlViewerScreen extends StatefulWidget {
 
 class _HtmlViewerScreenState extends State<HtmlViewerScreen> {
   late final WebViewController _controller;
+  final RemoteHtmlLoader _remoteHtmlLoader = const RemoteHtmlLoader();
   double _progress = 0.0;
   bool _isLoading = true;
   String? _errorMessage;
@@ -30,43 +29,47 @@ class _HtmlViewerScreenState extends State<HtmlViewerScreen> {
   }
 
   Future<void> _initWebView() async {
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            if (mounted) {
-              setState(() {
-                _progress = progress / 100.0;
-              });
-            }
-          },
-          onPageStarted: (String url) {
-            if (mounted) {
-              setState(() {
-                _isLoading = true;
-                _errorMessage = null;
-              });
-            }
-          },
-          onPageFinished: (String url) {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-              });
-            }
-          },
-          onWebResourceError: (WebResourceError error) {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-                _errorMessage = 'حدث خطأ أثناء تحميل الصفحة: ${error.description}';
-              });
-            }
-          },
-        ),
-      );
+    _controller =
+        WebViewController()
+          ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          ..setBackgroundColor(Colors.white)
+          ..setNavigationDelegate(
+            NavigationDelegate(
+              onProgress: (int progress) {
+                if (mounted) {
+                  setState(() {
+                    _progress = progress / 100.0;
+                  });
+                }
+              },
+              onPageStarted: (String url) {
+                if (mounted) {
+                  setState(() {
+                    _isLoading = true;
+                    _errorMessage = null;
+                  });
+                }
+              },
+              onPageFinished: (String url) {
+                if (mounted) {
+                  setState(() {
+                    _isLoading = false;
+                  });
+                }
+              },
+              onWebResourceError: (WebResourceError error) {
+                // Ignore failed images/trackers when the main page loaded correctly.
+                if (error.isForMainFrame != true) return;
+                if (mounted) {
+                  setState(() {
+                    _isLoading = false;
+                    _errorMessage =
+                        'حدث خطأ أثناء تحميل الصفحة: ${error.description}';
+                  });
+                }
+              },
+            ),
+          );
 
     _loadContent();
   }
@@ -75,21 +78,45 @@ class _HtmlViewerScreenState extends State<HtmlViewerScreen> {
     final rawUrl = widget.material.url.trim();
 
     try {
-      final isLocal = !rawUrl.startsWith('http://') && !rawUrl.startsWith('https://') && File(rawUrl).existsSync();
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+          _progress = 0;
+          _errorMessage = null;
+        });
+      }
+
+      final isLocal =
+          !rawUrl.startsWith('http://') &&
+          !rawUrl.startsWith('https://') &&
+          File(rawUrl).existsSync();
 
       if (isLocal) {
         final file = File(rawUrl);
         final htmlContent = await file.readAsString();
-        await _controller.loadHtmlString(htmlContent, baseUrl: file.parent.uri.toString());
+        await _controller.loadHtmlString(
+          htmlContent,
+          baseUrl: file.parent.uri.toString(),
+        );
+      } else if (widget.material.type == CourseMaterialType.interactiveHtml) {
+        final driveDownloadUrl = UrlService.googleDriveDownloadUrl(rawUrl);
+        if (driveDownloadUrl != null) {
+          final htmlContent = await _remoteHtmlLoader.load(driveDownloadUrl);
+          await _controller.loadHtmlString(htmlContent);
+        } else {
+          await _controller.loadRequest(
+            Uri.parse(UrlService.normalizeUrl(rawUrl)),
+          );
+        }
       } else {
-        final normalized = UrlService.normalizeUrl(rawUrl);
-        await _controller.loadRequest(Uri.parse(normalized));
+        final viewerUrl = UrlService.inAppViewerUrl(rawUrl);
+        await _controller.loadRequest(Uri.parse(viewerUrl));
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'تعذر قراءة ملف HTML: $e';
+          _errorMessage = 'تعذر فتح الملحق: $e';
         });
       }
     }
@@ -117,16 +144,19 @@ class _HtmlViewerScreenState extends State<HtmlViewerScreen> {
             onPressed: () => UrlService.openExternalUrl(widget.material.url),
           ),
         ],
-        bottom: _isLoading
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(3.0),
-                child: LinearProgressIndicator(
-                  value: _progress > 0 ? _progress : null,
-                  backgroundColor: Colors.transparent,
-                  valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                ),
-              )
-            : null,
+        bottom:
+            _isLoading
+                ? PreferredSize(
+                  preferredSize: const Size.fromHeight(3.0),
+                  child: LinearProgressIndicator(
+                    value: _progress > 0 ? _progress : null,
+                    backgroundColor: Colors.transparent,
+                    valueColor: const AlwaysStoppedAnimation<Color>(
+                      AppColors.primary,
+                    ),
+                  ),
+                )
+                : null,
       ),
       body: Stack(
         children: [
@@ -137,12 +167,19 @@ class _HtmlViewerScreenState extends State<HtmlViewerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, size: 48, color: AppColors.error),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                      color: AppColors.error,
+                    ),
                     const SizedBox(height: 16),
                     Text(
                       _errorMessage!,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
@@ -154,7 +191,8 @@ class _HtmlViewerScreenState extends State<HtmlViewerScreen> {
                     TextButton.icon(
                       icon: const Icon(Icons.open_in_new, size: 18),
                       label: const Text('فتح في متصفح خارجي'),
-                      onPressed: () => UrlService.openExternalUrl(widget.material.url),
+                      onPressed:
+                          () => UrlService.openExternalUrl(widget.material.url),
                     ),
                   ],
                 ),

@@ -108,6 +108,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             if (mounted) setState(() => _isLoading = false);
           },
           onWebResourceError: (error) {
+            if (error.isForMainFrame != true) return;
             if (mounted) {
               setState(() {
                 _isLoading = false;

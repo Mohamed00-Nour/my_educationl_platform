@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_time_utils.dart';
+import '../../../../core/utils/performance_rating.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/responsive_layout.dart';
 import '../../../../core/widgets/status_badge.dart';
@@ -92,13 +93,15 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
                 ? quiz.questions.fold<int>(0, (s, q) => s + q.marks)
                 : (attempt.score > 0 ? attempt.score : 1));
 
-    final effectivePassed =
-        attempt.isPassed ||
-        QuizEntity.calculateIsPassed(
-          score: attempt.score,
-          totalMarks: effectiveTotalMarks,
-          passingScore: quiz.passingScore,
-        );
+    final performance = PerformanceRating.fromScore(
+      score: attempt.score,
+      totalMarks: effectiveTotalMarks,
+    );
+    final effectivePassed = performance.isSuccessful;
+    final performanceColor = AppColors.forPerformance(performance.band);
+    final performanceBackground = AppColors.backgroundForPerformance(
+      performance.band,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -229,32 +232,38 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
                     Container(
                       padding: const EdgeInsets.all(18),
                       decoration: BoxDecoration(
-                        color:
-                            effectivePassed
-                                ? AppColors.successLight
-                                : AppColors.errorLight,
+                        color: performanceBackground,
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        effectivePassed
+                        performance.isExcellent
+                            ? Icons.auto_awesome_rounded
+                            : performance.isVeryGood
                             ? Icons.emoji_events_outlined
+                            : effectivePassed
+                            ? Icons.check_circle_outline
                             : Icons.sentiment_dissatisfied_outlined,
                         size: 48,
-                        color:
-                            effectivePassed
-                                ? AppColors.success
-                                : AppColors.error,
+                        color: performanceColor,
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      effectivePassed
-                          ? 'تهانينا! لقد اجتزت الاختبار بنجاح'
-                          : 'تحتاج إلى مزيد من التدريب والمذاكرة',
+                      performance.labelArabic,
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      performance.resultMessageArabic,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: performanceColor,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -279,11 +288,9 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
                         ),
                         _MetricItem(
                           label: 'النسبة المئوية',
-                          value: '${attempt.percentage}%',
-                          color:
-                              effectivePassed
-                                  ? AppColors.success
-                                  : AppColors.error,
+                          value:
+                              '${performance.percentage.toStringAsFixed(1)}%',
+                          color: performanceColor,
                         ),
                         _MetricItem(
                           label: 'الوقت المستغرق',

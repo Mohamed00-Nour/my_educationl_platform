@@ -33,6 +33,7 @@ import '../../features/evaluations/domain/repositories/evaluation_repository.dar
 import '../../features/evaluations/presentation/bloc/evaluation_bloc.dart';
 
 import '../../features/notifications/data/services/fcm_service.dart';
+import '../../features/notifications/data/services/embedded_fcm_sender.dart';
 import '../../features/notifications/data/services/notification_queue_service.dart';
 
 import '../../features/progress/data/repositories/progress_repository_impl.dart';
@@ -133,10 +134,19 @@ Future<void> setupServiceLocator() async {
     () => ValidateAIQuestionsUseCase(),
   );
   getIt.registerLazySingleton<FCMService>(
-    () => FCMService(messaging: messaging, firestore: firestore),
+    () => FCMService(
+      messaging: messaging,
+      firestore: firestore,
+      preferences: prefs,
+    ),
   );
+  getIt.registerLazySingleton<EmbeddedFcmSender>(() => EmbeddedFcmSender());
   getIt.registerLazySingleton<NotificationQueueService>(
-    () => NotificationQueueService(firestore: firestore),
+    () => NotificationQueueService(
+      firestore: firestore,
+      auth: auth,
+      sender: getIt<EmbeddedFcmSender>(),
+    ),
   );
   getIt.registerLazySingleton<AttemptSyncService>(
     () => AttemptSyncService(getIt<QuizRepository>()),
@@ -158,7 +168,10 @@ Future<void> setupServiceLocator() async {
     ),
   );
   getIt.registerFactory<CourseBloc>(
-    () => CourseBloc(getIt<CourseRepository>()),
+    () => CourseBloc(
+      getIt<CourseRepository>(),
+      notificationQueueService: getIt<NotificationQueueService>(),
+    ),
   );
   getIt.registerFactory<AIImportBloc>(
     () => AIImportBloc(

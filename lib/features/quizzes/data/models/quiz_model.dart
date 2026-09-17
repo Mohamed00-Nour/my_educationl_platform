@@ -80,7 +80,7 @@ class QuizModel extends QuizEntity {
       lessonId: data['lessonId']?.toString(),
       durationMinutes: (data['durationMinutes'] as num?)?.toInt() ?? 15,
       totalMarks: (data['totalMarks'] as num?)?.toInt() ?? 10,
-      passingScore: (data['passingScore'] as num?)?.toInt() ?? 6,
+      passingScore: (data['passingScore'] as num?)?.toInt() ?? 50,
       maxAttempts: (data['maxAttempts'] as num?)?.toInt() ?? 1,
       availableFrom: parseDate(data['availableFrom']),
       availableUntil: parseDate(data['availableUntil']),

@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/empty_state_view.dart';
 import '../../../../core/widgets/responsive_layout.dart';
 import '../../../auth/domain/entities/user_entity.dart';
+import '../../../notifications/presentation/widgets/push_notification_fields.dart';
 import '../../data/datasources/ministry_course_seeder.dart';
 import '../../domain/entities/course_entity.dart';
 import '../../domain/entities/lesson_entity.dart';
@@ -289,14 +290,21 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   // ================= UNIT CRUD DIALOGS =================
-  void _showAddUnitDialog(BuildContext context, int currentUnitsCount) {
+  Future<void> _showAddUnitDialog(BuildContext context, int currentUnitsCount) async {
     final titleController = TextEditingController();
     final descController = TextEditingController();
     final pageController = TextEditingController();
+    final notificationDraft = PushNotificationDraft(
+      defaultTitle: 'وحدة دراسية جديدة',
+      defaultBody: 'تمت إضافة وحدة جديدة إلى كورس ${widget.course.title}.',
+    );
+    ModalRoute<dynamic>? dialogRoute;
 
-    showDialog(
+    await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) {
+        dialogRoute ??= ModalRoute.of(ctx);
+        return AlertDialog(
         title: const Text('إضافة وحدة دراسية جديدة'),
         content: SingleChildScrollView(
           child: Column(
@@ -326,6 +334,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 ),
                 keyboardType: TextInputType.number,
               ),
+              PushNotificationFields(draft: notificationDraft),
             ],
           ),
         ),
@@ -338,6 +347,16 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
             onPressed: () {
               final title = titleController.text.trim();
               if (title.isNotEmpty) {
+                final notificationError = notificationDraft.validate();
+                if (notificationError != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(notificationError),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  return;
+                }
                 final startPage = int.tryParse(pageController.text.trim());
                 final newUnit = UnitEntity(
                   id: '',
@@ -348,15 +367,29 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                   bookStartPage: startPage,
                   isPublished: true,
                 );
-                context.read<CourseBloc>().add(CreateUnitRequested(newUnit));
+                context.read<CourseBloc>().add(
+                  CreateUnitRequested(
+                    newUnit,
+                    notification: notificationDraft.buildRequest(
+                      courseId: widget.course.id,
+                      contentType: 'unit',
+                    ),
+                  ),
+                );
                 Navigator.pop(ctx);
               }
             },
             child: const Text('إضافة الوحدة'),
           ),
         ],
-      ),
+        );
+      },
     );
+    await dialogRoute?.completed;
+    titleController.dispose();
+    descController.dispose();
+    pageController.dispose();
+    notificationDraft.dispose();
   }
 
   void _showEditUnitDialog(BuildContext context, UnitEntity unit) {
@@ -484,15 +517,22 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   // ================= LESSON CRUD DIALOGS =================
-  void _showAddLessonDialog(BuildContext context, UnitEntity unit, int currentLessonsCount) {
+  Future<void> _showAddLessonDialog(BuildContext context, UnitEntity unit, int currentLessonsCount) async {
     final titleController = TextEditingController();
     final descController = TextEditingController();
     final pageController = TextEditingController();
     final notesController = TextEditingController();
+    final notificationDraft = PushNotificationDraft(
+      defaultTitle: 'درس جديد',
+      defaultBody: 'تمت إضافة درس جديد إلى كورس ${widget.course.title}.',
+    );
+    ModalRoute<dynamic>? dialogRoute;
 
-    showDialog(
+    await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) {
+        dialogRoute ??= ModalRoute.of(ctx);
+        return AlertDialog(
         title: Text('إضافة درس إلى ${unit.title}'),
         content: SingleChildScrollView(
           child: Column(
@@ -528,6 +568,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 ),
                 maxLines: 2,
               ),
+              PushNotificationFields(draft: notificationDraft),
             ],
           ),
         ),
@@ -540,6 +581,16 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
             onPressed: () {
               final title = titleController.text.trim();
               if (title.isNotEmpty) {
+                final notificationError = notificationDraft.validate();
+                if (notificationError != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(notificationError),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                  return;
+                }
                 final startPage = int.tryParse(pageController.text.trim());
                 final newLesson = LessonEntity(
                   id: '',
@@ -554,15 +605,30 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       : null,
                   isPublished: true,
                 );
-                context.read<CourseBloc>().add(CreateLessonRequested(newLesson));
+                context.read<CourseBloc>().add(
+                  CreateLessonRequested(
+                    newLesson,
+                    notification: notificationDraft.buildRequest(
+                      courseId: widget.course.id,
+                      contentType: 'lesson',
+                    ),
+                  ),
+                );
                 Navigator.pop(ctx);
               }
             },
             child: const Text('إضافة الدرس'),
           ),
         ],
-      ),
+        );
+      },
     );
+    await dialogRoute?.completed;
+    titleController.dispose();
+    descController.dispose();
+    pageController.dispose();
+    notesController.dispose();
+    notificationDraft.dispose();
   }
 
   void _showEditLessonDialog(BuildContext context, LessonEntity lesson) {
