@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_time_utils.dart';
@@ -8,6 +7,8 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/empty_state_view.dart';
 import '../../../../core/widgets/responsive_layout.dart';
 import '../../../auth/domain/entities/user_entity.dart';
+import '../../data/services/fcm_service.dart';
+import '../../data/services/notification_history_service.dart';
 import '../../data/services/notification_queue_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -21,6 +22,26 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
+  late final Stream<List<NotificationDocument>> _notificationsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationsStream = NotificationHistoryService().watchForUser(
+      widget.user,
+    );
+  }
+
+  Map<String, dynamic> _navigationPayload(Map<String, dynamic> data) {
+    final rawPayload = data['dataPayload'];
+    final payload = rawPayload is Map
+        ? rawPayload.map((key, value) => MapEntry(key.toString(), value))
+        : <String, dynamic>{};
+    payload['targetType'] = data['targetType']?.toString() ?? '';
+    payload['targetId'] = data['targetId']?.toString() ?? '';
+    return payload;
+  }
+
   void _showCreateAnnouncementDialog() {
     final titleCtrl = TextEditingController();
     final bodyCtrl = TextEditingController();
@@ -325,21 +346,25 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream:
-            FirebaseFirestore.instance
-                .collection(FirestoreCollections.notificationsQueue)
-                .orderBy('createdAt', descending: true)
-                .snapshots(),
+      body: StreamBuilder<List<NotificationDocument>>(
+        stream: _notificationsStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          if (snapshot.hasError) {
+            return const EmptyStateView(
+              icon: Icons.cloud_off_outlined,
+              title: 'تعذر تحميل الإشعارات',
+              message: 'تحقق من الاتصال ثم حاول مرة أخرى.',
+            );
+          }
+
+          final docs = snapshot.data ?? const <NotificationDocument>[];
           final filtered =
               docs.where((d) {
-                final data = d.data() as Map<String, dynamic>;
+                final data = d.data();
                 final targetType = data['targetType'] as String? ?? '';
                 final targetId = data['targetId'] as String?;
                 final createdBy = data['createdBy'] as String?;
@@ -380,12 +405,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               itemCount: filtered.length,
               itemBuilder: (context, index) {
                 final doc = filtered[index];
-                final data = doc.data() as Map<String, dynamic>;
+                final data = doc.data();
                 final title = data['title'] as String? ?? 'إعلان';
                 final body = data['body'] as String? ?? '';
                 final targetType = data['targetType'] as String? ?? 'all';
                 final timestamp = data['createdAt'];
                 final hasBeenEdited = data['updatedAt'] != null;
+                final navigationPayload = _navigationPayload(data);
+                final canOpen =
+                    (navigationPayload['contentType']?.toString().isNotEmpty ??
+                        false) ||
+                    targetType == 'course';
 
                 String timeStr = 'مؤخراً';
                 if (timestamp is Timestamp) {
@@ -429,9 +459,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     borderRadius: BorderRadius.circular(16),
                     side: const BorderSide(color: AppColors.border),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: canOpen
+                        ? () => getIt<FCMService>().openNotificationPayload(
+                            navigationPayload,
+                          )
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
@@ -558,6 +595,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           ),
                         ),
                       ],
+                      ),
                     ),
                   ),
                 );

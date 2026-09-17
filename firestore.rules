@@ -33,6 +33,46 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(studentId)).data.ownerAdminId == request.auth.uid);
     }
 
+    function canReadNotification() {
+      return isAuthenticated()
+        && (
+          resource.data.targetId == request.auth.uid
+          || resource.data.targetId == getUserData().ownerAdminId
+          || (
+            getUserData().enrolledCourseIds is list
+            && resource.data.targetId in getUserData().enrolledCourseIds
+          )
+        );
+    }
+
+    function canManageNotificationTarget(notificationData) {
+      return isSuperAdmin()
+        || (
+          isStrictAdmin()
+          && (
+            (
+              notificationData.targetType == 'teacher'
+              && notificationData.targetId == request.auth.uid
+            )
+            || (
+              notificationData.targetType == 'course'
+              && (
+                get(
+                  /databases/$(database)/documents/courses/$(notificationData.targetId)
+                ).data.ownerAdminId == request.auth.uid
+                || get(
+                  /databases/$(database)/documents/courses/$(notificationData.targetId)
+                ).data.ownerAdminId == null
+              )
+            )
+            || (
+              notificationData.targetType == 'student'
+              && canManageStudent(notificationData.targetId)
+            )
+          )
+        );
+    }
+
     // 1. Users collection & Tenant Assignment
     match /users/{userId} {
       allow read: if isAuthenticated();
@@ -131,24 +171,23 @@ service cloud.firestore {
 
     // 9. Notifications Queue
     match /notifications_queue/{notificationId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || canReadNotification();
       allow create: if isAdmin()
-        && (
-          request.resource.data.targetType != 'course'
-          || isSuperAdmin()
-          || (
-            request.resource.data.targetId is string
-            && (
-              get(
-                /databases/$(database)/documents/courses/$(request.resource.data.targetId)
-              ).data.ownerAdminId == request.auth.uid
-              || get(
-                /databases/$(database)/documents/courses/$(request.resource.data.targetId)
-              ).data.ownerAdminId == null
-            )
-          )
-        );
-      allow update, delete: if false; 
+        && request.resource.data.createdBy == request.auth.uid
+        && canManageNotificationTarget(request.resource.data);
+      allow update: if (isSuperAdmin()
+          || (isStrictAdmin() && resource.data.createdBy == request.auth.uid))
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'title',
+          'body',
+          'targetType',
+          'targetId',
+          'updatedAt'
+        ])
+        && canManageNotificationTarget(request.resource.data);
+      allow delete: if isSuperAdmin()
+        || (isStrictAdmin() && resource.data.createdBy == request.auth.uid);
     }
   }
 }

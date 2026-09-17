@@ -32,6 +32,7 @@ void main() {
         courseId: 'course-1',
         contentType: 'lesson',
         contentId: 'lesson-2',
+        lessonId: 'lesson-2',
       );
 
       expect(request!.courseId, 'course-1');
@@ -39,6 +40,7 @@ void main() {
       expect(request.dataPayload['page'], '2');
       expect(request.dataPayload['courseId'], 'course-1');
       expect(request.dataPayload['contentId'], 'lesson-2');
+      expect(request.dataPayload['lessonId'], 'lesson-2');
       draft.dispose();
     });
 

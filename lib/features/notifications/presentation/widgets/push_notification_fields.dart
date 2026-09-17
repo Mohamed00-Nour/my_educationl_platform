@@ -60,6 +60,7 @@ class PushNotificationDraft {
     required String courseId,
     required String contentType,
     String? contentId,
+    String? lessonId,
   }) {
     if (!enabled) return null;
     final payload = <String, String>{};
@@ -75,6 +76,9 @@ class PushNotificationDraft {
     payload['contentType'] = contentType;
     if (contentId != null && contentId.isNotEmpty) {
       payload['contentId'] = contentId;
+    }
+    if (lessonId != null && lessonId.isNotEmpty) {
+      payload['lessonId'] = lessonId;
     }
 
     return CourseNotificationRequest(

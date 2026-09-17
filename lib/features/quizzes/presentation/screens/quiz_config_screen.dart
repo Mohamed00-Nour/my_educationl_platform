@@ -873,6 +873,7 @@ class _QuizConfigScreenState extends State<QuizConfigScreen> {
           courseId: _selectedCourseId,
           contentType: 'quiz',
           contentId: createdQuiz.id,
+          lessonId: widget.lessonId,
         );
         if (notification != null) {
           await getIt<NotificationQueueService>().enqueueCourseNotification(

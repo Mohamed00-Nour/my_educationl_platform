@@ -316,7 +316,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                   );
                   if (isEditing) {
                     final materialIndex = updatedMaterials.indexWhere(
-                      (item) => item.id == material!.id,
+                      (item) => item.id == material.id,
                     );
                     if (materialIndex >= 0) {
                       updatedMaterials[materialIndex] = savedMaterial;
@@ -340,6 +340,7 @@ class _LessonDetailScreenState extends State<LessonDetailScreen> {
                               courseId: currentLesson.courseId,
                               contentType: 'material',
                               contentId: savedMaterial.id,
+                              lessonId: currentLesson.id,
                             ),
                     ),
                   );

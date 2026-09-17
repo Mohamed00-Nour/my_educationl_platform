@@ -28,6 +28,11 @@ class FCMService {
 
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _notificationOpenedSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _userProfileSubscription;
+  final StreamController<Map<String, dynamic>> _notificationTapController =
+      StreamController<Map<String, dynamic>>.broadcast();
   String? _activeUserId;
   bool _receiverInitialized = false;
 
@@ -41,6 +46,15 @@ class FCMService {
        _preferences = preferences,
        _localNotifications =
            localNotifications ?? FlutterLocalNotificationsPlugin();
+
+  Stream<Map<String, dynamic>> get notificationTaps =>
+      _notificationTapController.stream;
+
+  void openNotificationPayload(Map<String, dynamic> payload) {
+    if (payload.isNotEmpty) {
+      _notificationTapController.add(Map<String, dynamic>.from(payload));
+    }
+  }
 
   /// Makes this device's managed topics exactly match the authenticated
   /// student's current course enrollment.
@@ -81,12 +95,33 @@ class FCMService {
         }
       });
 
-      final desiredTopics = <String>{
-        ...user.enrolledCourseIds.map(NotificationTopics.course),
-        if (user.ownerAdminId != null && user.ownerAdminId!.trim().isNotEmpty)
-          NotificationTopics.teacherStudents(user.ownerAdminId!),
-      };
+      final desiredTopics = _topicsForStudent(
+        courseIds: user.enrolledCourseIds,
+        ownerAdminId: user.ownerAdminId,
+      );
       await _syncManagedTopics(desiredTopics);
+
+      await _userProfileSubscription?.cancel();
+      _userProfileSubscription = _firestore
+          .collection(FirestoreCollections.users)
+          .doc(user.id)
+          .snapshots()
+          .listen((snapshot) {
+            final data = snapshot.data();
+            if (data == null || _activeUserId != user.id) return;
+            final courseIds = List<String>.from(
+              data['enrolledCourseIds'] as List<dynamic>? ?? const [],
+            );
+            final ownerAdminId = data['ownerAdminId']?.toString();
+            unawaited(
+              _syncManagedTopics(
+                _topicsForStudent(
+                  courseIds: courseIds,
+                  ownerAdminId: ownerAdminId,
+                ),
+              ),
+            );
+          });
     } catch (error, stackTrace) {
       debugPrint('FCM initialization error: $error\n$stackTrace');
     }
@@ -112,6 +147,8 @@ class FCMService {
 
     await _tokenRefreshSubscription?.cancel();
     _tokenRefreshSubscription = null;
+    await _userProfileSubscription?.cancel();
+    _userProfileSubscription = null;
     await _syncManagedTopics(const <String>{});
     _activeUserId = null;
   }
@@ -144,6 +181,19 @@ class FCMService {
     );
   }
 
+  Set<String> _topicsForStudent({
+    required Iterable<String> courseIds,
+    required String? ownerAdminId,
+  }) {
+    return <String>{
+      ...courseIds
+          .where((id) => id.trim().isNotEmpty)
+          .map(NotificationTopics.course),
+      if (ownerAdminId != null && ownerAdminId.trim().isNotEmpty)
+        NotificationTopics.teacherStudents(ownerAdminId),
+    };
+  }
+
   Future<void> _initializeReceiver() async {
     if (_receiverInitialized) return;
     _receiverInitialized = true;
@@ -152,7 +202,18 @@ class FCMService {
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: DarwinInitializationSettings(),
     );
-    await _localNotifications.initialize(initializationSettings);
+    await _localNotifications.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (response) {
+        _emitEncodedPayload(response.payload);
+      },
+    );
+
+    final localLaunchDetails =
+        await _localNotifications.getNotificationAppLaunchDetails();
+    if (localLaunchDetails?.didNotificationLaunchApp ?? false) {
+      _emitEncodedPayload(localLaunchDetails?.notificationResponse?.payload);
+    }
 
     await _localNotifications
         .resolvePlatformSpecificImplementation<
@@ -171,6 +232,29 @@ class FCMService {
     _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
       _showForegroundNotification,
     );
+
+    await _notificationOpenedSubscription?.cancel();
+    _notificationOpenedSubscription = FirebaseMessaging.onMessageOpenedApp
+        .listen((message) => openNotificationPayload(message.data));
+
+    final initialMessage = await _messaging.getInitialMessage();
+    if (initialMessage != null) {
+      openNotificationPayload(initialMessage.data);
+    }
+  }
+
+  void _emitEncodedPayload(String? encodedPayload) {
+    if (encodedPayload == null || encodedPayload.trim().isEmpty) return;
+    try {
+      final decoded = jsonDecode(encodedPayload);
+      if (decoded is Map) {
+        openNotificationPayload(
+          decoded.map((key, value) => MapEntry(key.toString(), value)),
+        );
+      }
+    } catch (error) {
+      debugPrint('Could not decode notification payload: $error');
+    }
   }
 
   Future<void> _showForegroundNotification(RemoteMessage message) async {

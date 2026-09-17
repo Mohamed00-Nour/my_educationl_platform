@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,7 +12,10 @@ import 'features/auth/presentation/widgets/role_guard_widget.dart';
 import 'features/courses/presentation/bloc/course_bloc.dart';
 import 'features/courses/presentation/screens/student_main_screen.dart';
 import 'features/notifications/data/services/fcm_service.dart';
+import 'features/notifications/presentation/services/notification_navigation_service.dart';
 import 'features/quizzes/presentation/blocs/ai_import_bloc.dart';
+import 'features/courses/domain/repositories/course_repository.dart';
+import 'features/quizzes/domain/repositories/quiz_repository.dart';
 
 import 'features/quizzes/data/services/attempt_sync_service.dart';
 
@@ -23,17 +28,63 @@ class InstructorApp extends StatefulWidget {
 
 class _InstructorAppState extends State<InstructorApp>
     with WidgetsBindingObserver {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<Map<String, dynamic>>? _notificationTapSubscription;
+  late final NotificationNavigationService _notificationNavigationService;
+  bool _isOpeningNotification = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _notificationNavigationService = NotificationNavigationService(
+      courseRepository: getIt<CourseRepository>(),
+      quizRepository: getIt<QuizRepository>(),
+    );
+    _notificationTapSubscription = getIt<FCMService>().notificationTaps.listen(
+      _openNotification,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       getIt<AttemptSyncService>().syncPendingAttempts();
     });
   }
 
+  Future<void> _openNotification(Map<String, dynamic> payload) async {
+    if (_isOpeningNotification) return;
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    final authState = BlocProvider.of<AuthBloc>(navigator.context).state;
+    if (authState is! Authenticated) return;
+
+    _isOpeningNotification = true;
+    try {
+      await _notificationNavigationService.open(
+        navigator: navigator,
+        user: authState.user,
+        payload: payload,
+      );
+    } on NotificationNavigationException catch (error) {
+      final context = _navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    } catch (_) {
+      final context = _navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر فتح محتوى هذا الإشعار.')),
+        );
+      }
+    } finally {
+      _isOpeningNotification = false;
+    }
+  }
+
   @override
   void dispose() {
+    _notificationTapSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -62,6 +113,7 @@ class _InstructorAppState extends State<InstructorApp>
         BlocProvider<AIImportBloc>(create: (_) => getIt<AIImportBloc>()),
       ],
       child: MaterialApp(
+        navigatorKey: _navigatorKey,
         title: 'المنصة التعليمية',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
