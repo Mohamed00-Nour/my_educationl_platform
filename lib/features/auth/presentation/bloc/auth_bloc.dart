@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/errors/failures.dart';
@@ -138,8 +139,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       );
       emit(Authenticated(user));
     } on Failure catch (f) {
+      _logFailure('sign-in', f);
       emit(AuthErrorState(f.message));
     } catch (e) {
+      _logUnexpectedError('sign-in', e);
       emit(AuthErrorState('An unexpected error occurred. Please try again.'));
     }
   }
@@ -171,7 +174,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       }
 
       final enrolledCourseIds = [
-        if (event.enrolledCourseId != null && event.enrolledCourseId!.isNotEmpty)
+        if (event.enrolledCourseId != null &&
+            event.enrolledCourseId!.isNotEmpty)
           event.enrolledCourseId!,
       ];
 
@@ -200,10 +204,25 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
       emit(Authenticated(user));
     } on Failure catch (f) {
+      _logFailure('sign-up', f);
       emit(AuthErrorState(f.message));
     } catch (e) {
+      _logUnexpectedError('sign-up', e);
       emit(AuthErrorState('Account registration failed: $e'));
     }
+  }
+
+  void _logFailure(String operation, Failure failure) {
+    if (!kDebugMode) return;
+    debugPrint(
+      '❌ [AuthBloc][$operation][${failure.code ?? 'no-code'}] '
+      '${failure.message}',
+    );
+  }
+
+  void _logUnexpectedError(String operation, Object error) {
+    if (!kDebugMode) return;
+    debugPrint('❌ [AuthBloc][$operation][unexpected] $error');
   }
 
   Future<void> _onSignOutRequested(

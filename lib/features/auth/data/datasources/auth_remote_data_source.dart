@@ -56,18 +56,9 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (doc.exists) {
         return UserModel.fromFirestore(doc);
       } else {
-        // Fallback user profile if Firestore document wasn't created yet
-        final fallback = UserModel(
-          id: currentUser.uid,
-          email: currentUser.email ?? '',
-          displayName: currentUser.displayName ?? 'Student',
-          role: UserRole.student,
-        );
-        await _firestore
-            .collection(FirestoreCollections.users)
-            .doc(currentUser.uid)
-            .set(fallback.toMap());
-        return fallback;
+        // Keep a partially-created Auth account signed in so the signup flow
+        // can safely finish its profile after the user enters the teacher code.
+        return null;
       }
     } catch (e) {
       throw ServerException('Failed to retrieve user profile: $e');
@@ -87,12 +78,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         if (doc.exists) {
           return UserModel.fromFirestore(doc);
         }
-        return UserModel(
-          id: user.uid,
-          email: user.email ?? '',
-          displayName: user.displayName ?? '',
-          role: UserRole.student,
-        );
+        return null;
       } catch (_) {
         return null;
       }
@@ -124,20 +110,15 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       if (doc.exists) {
         return UserModel.fromFirestore(doc);
       } else {
-        final newModel = UserModel(
-          id: user.uid,
-          email: user.email ?? '',
-          displayName: user.displayName ?? 'User',
-          role: UserRole.student,
+        throw const AuthException(
+          'Account setup is incomplete. Choose Create new account and submit the same email and password to finish registration.',
+          'incomplete-profile',
         );
-        await _firestore
-            .collection(FirestoreCollections.users)
-            .doc(user.uid)
-            .set(newModel.toMap());
-        return newModel;
       }
     } on FirebaseAuthException catch (e) {
       throw AuthException(_mapFirebaseAuthErrorMessage(e), e.code);
+    } on AuthException {
+      rethrow;
     } catch (e) {
       throw ServerException('Sign in failed: $e');
     }
@@ -153,13 +134,65 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     String? ownerAdminId,
     List<String> enrolledCourseIds = const [],
   }) async {
+    User? newlyCreatedUser;
     try {
-      final credential = await _firebaseAuth.createUserWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
+      final normalizedEmail = email.trim();
+      final currentUser = _firebaseAuth.currentUser;
+      User? user;
 
-      final user = credential.user;
+      // A previous app version could create the Auth account and then fail the
+      // Firestore batch. If that partial account is still signed in, complete
+      // its profile instead of returning "email already in use" forever.
+      if (currentUser != null &&
+          currentUser.email?.toLowerCase() == normalizedEmail.toLowerCase()) {
+        final profile =
+            await _firestore
+                .collection(FirestoreCollections.users)
+                .doc(currentUser.uid)
+                .get();
+        await currentUser.reauthenticateWithCredential(
+          EmailAuthProvider.credential(
+            email: normalizedEmail,
+            password: password,
+          ),
+        );
+        if (profile.exists) {
+          return UserModel.fromFirestore(profile);
+        }
+        user = currentUser;
+      }
+
+      if (user == null) {
+        try {
+          final credential = await _firebaseAuth.createUserWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          );
+          user = credential.user;
+          newlyCreatedUser = user;
+        } on FirebaseAuthException catch (error) {
+          if (error.code != 'email-already-in-use') rethrow;
+
+          // Recover an orphaned Auth account even after an app restart or on a
+          // different session. A complete account still reports the normal
+          // email-already-in-use error.
+          final credential = await _firebaseAuth.signInWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          );
+          final existingUser = credential.user;
+          if (existingUser == null) rethrow;
+
+          final profile =
+              await _firestore
+                  .collection(FirestoreCollections.users)
+                  .doc(existingUser.uid)
+                  .get();
+          if (profile.exists) rethrow;
+          user = existingUser;
+        }
+      }
+
       if (user == null) {
         throw const AuthException('User creation failed');
       }
@@ -168,7 +201,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       final userModel = UserModel(
         id: user.uid,
-        email: email.trim(),
+        email: normalizedEmail,
         displayName: displayName.trim(),
         role: role,
         grade: grade,
@@ -196,9 +229,24 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       return userModel;
     } on FirebaseAuthException catch (e) {
+      await _deletePartialAccount(newlyCreatedUser);
       throw AuthException(_mapFirebaseAuthErrorMessage(e), e.code);
+    } on AuthException {
+      await _deletePartialAccount(newlyCreatedUser);
+      rethrow;
     } catch (e) {
+      await _deletePartialAccount(newlyCreatedUser);
       throw ServerException('Sign up failed: $e');
+    }
+  }
+
+  Future<void> _deletePartialAccount(User? user) async {
+    if (user == null) return;
+    try {
+      await user.delete();
+    } catch (_) {
+      // Preserve the original registration error. A still-signed-in partial
+      // account can be completed by the recovery path on the next attempt.
     }
   }
 
@@ -222,11 +270,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         final data = doc.data();
         return {
           'id': doc.id,
-          'title': (data['title'] as String?)?.trim().isNotEmpty == true
-              ? (data['title'] as String)
-              : 'كورس بدون عنوان',
+          'title':
+              (data['title'] as String?)?.trim().isNotEmpty == true
+                  ? (data['title'] as String)
+                  : 'كورس بدون عنوان',
         };
       }).toList();
+    } on FirebaseException catch (e) {
+      throw ServerException(
+        'Failed to fetch teacher courses: ${e.message ?? e.code}',
+        e.code,
+      );
     } catch (e) {
       throw ServerException('Failed to fetch teacher courses: $e');
     }

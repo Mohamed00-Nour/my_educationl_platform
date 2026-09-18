@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/errors/failures.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -36,6 +37,25 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoadingCourses = false;
   String? _courseLoadError;
 
+  String _courseLoadErrorMessage(Object error) {
+    if (error is AuthFailure) {
+      switch (error.code) {
+        case 'inactive-join-code':
+          return 'كود المعلم غير مفعّل. تواصل مع المعلم للحصول على كود جديد.';
+        case 'expired-join-code':
+          return 'انتهت صلاحية كود المعلم. اطلب كودًا جديدًا من المعلم.';
+        default:
+          return 'كود المعلم غير صحيح. تأكد من الكود وحاول مرة أخرى.';
+      }
+    }
+
+    if (error is ServerFailure && error.code == 'permission-denied') {
+      return 'تعذر التحقق بسبب إعدادات الخادم. حدّث التطبيق أو تواصل مع الدعم.';
+    }
+
+    return 'تعذر الاتصال بالخادم. تحقق من الإنترنت ثم حاول مرة أخرى.';
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -50,11 +70,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (_isSignUp) {
       // Students must pick a course before registering.
-      if (_selectedRole == UserRole.student &&
-          (_availableCourses.isNotEmpty && _selectedCourseId == null)) {
+      if (_selectedRole == UserRole.student && _selectedCourseId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('يرجى اختيار الكورس الخاص بك قبل المتابعة.'),
+            content: Text(
+              'يرجى جلب كورسات المعلم واختيار الكورس قبل المتابعة.',
+            ),
             backgroundColor: AppColors.warning,
           ),
         );
@@ -110,7 +131,6 @@ class _LoginScreenState extends State<LoginScreen> {
       final joinCodeEntity = await validateUseCase.call(code);
       final adminId = joinCodeEntity.adminId;
 
-
       // Step 2: Fetch that teacher's courses filtered by selected grade
       final authRepo = getIt<AuthRepository>();
       final courses = await authRepo.fetchCoursesForTeacher(
@@ -118,6 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
         grade: _selectedGrade,
       );
 
+      if (!mounted) return;
       setState(() {
         _availableCourses = courses;
         _isLoadingCourses = false;
@@ -127,8 +148,9 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _courseLoadError = 'كود المعلم غير صحيح أو منتهي الصلاحية. تحقّق من الكود واتصال الإنترنت.';
+        _courseLoadError = _courseLoadErrorMessage(e);
         _isLoadingCourses = false;
       });
     }
@@ -335,14 +357,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                       isSelected:
                                           _selectedGrade ==
                                           StudentGrade.firstSecondary,
-                                      onTap: () => setState(() {
-                                        _selectedGrade =
-                                            StudentGrade.firstSecondary;
-                                        // Reset courses when grade changes
-                                        _availableCourses = [];
-                                        _selectedCourseId = null;
-                                        _courseLoadError = null;
-                                      }),
+                                      onTap:
+                                          () => setState(() {
+                                            _selectedGrade =
+                                                StudentGrade.firstSecondary;
+                                            // Reset courses when grade changes
+                                            _availableCourses = [];
+                                            _selectedCourseId = null;
+                                            _courseLoadError = null;
+                                          }),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -353,14 +376,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                       isSelected:
                                           _selectedGrade ==
                                           StudentGrade.secondSecondary,
-                                      onTap: () => setState(() {
-                                        _selectedGrade =
-                                            StudentGrade.secondSecondary;
-                                        // Reset courses when grade changes
-                                        _availableCourses = [];
-                                        _selectedCourseId = null;
-                                        _courseLoadError = null;
-                                      }),
+                                      onTap:
+                                          () => setState(() {
+                                            _selectedGrade =
+                                                StudentGrade.secondSecondary;
+                                            // Reset courses when grade changes
+                                            _availableCourses = [];
+                                            _selectedCourseId = null;
+                                            _courseLoadError = null;
+                                          }),
                                     ),
                                   ),
                                 ],
@@ -391,18 +415,19 @@ class _LoginScreenState extends State<LoginScreen> {
                               SizedBox(
                                 width: double.infinity,
                                 child: OutlinedButton.icon(
-                                  icon: _isLoadingCourses
-                                      ? const SizedBox(
-                                          width: 14,
-                                          height: 14,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
+                                  icon:
+                                      _isLoadingCourses
+                                          ? const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                          : const Icon(
+                                            Icons.search_rounded,
+                                            size: 18,
                                           ),
-                                        )
-                                      : const Icon(
-                                          Icons.search_rounded,
-                                          size: 18,
-                                        ),
                                   label: Text(
                                     _isLoadingCourses
                                         ? 'جاري تحميل الكورسات...'
@@ -449,10 +474,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                       title: course['title']!,
                                       isSelected:
                                           _selectedCourseId == course['id'],
-                                      onTap: () => setState(
-                                        () =>
-                                            _selectedCourseId = course['id'],
-                                      ),
+                                      onTap:
+                                          () => setState(
+                                            () =>
+                                                _selectedCourseId =
+                                                    course['id'],
+                                          ),
                                     ),
                                   ),
                                 ),
@@ -664,9 +691,10 @@ class _CourseSelectionCard extends StatelessWidget {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
         decoration: BoxDecoration(
-          color: isSelected
-              ? AppColors.primary.withAlpha(20)
-              : AppColors.surfaceVariant,
+          color:
+              isSelected
+                  ? AppColors.primary.withAlpha(20)
+                  : AppColors.surfaceVariant,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected ? AppColors.primary : AppColors.border,
@@ -688,11 +716,11 @@ class _CourseSelectionCard extends StatelessWidget {
                 title,
                 style: TextStyle(
                   fontSize: 13.5,
-                  fontWeight:
-                      isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected
-                      ? AppColors.textPrimary
-                      : AppColors.textSecondary,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color:
+                      isSelected
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
                   fontFamily: 'Cairo',
                 ),
               ),

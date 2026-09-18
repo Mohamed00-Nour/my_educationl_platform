@@ -81,6 +81,11 @@ class JoinCodeRemoteDataSourceImpl implements JoinCodeRemoteDataSource {
       return model;
     } on AuthException {
       rethrow;
+    } on FirebaseException catch (e) {
+      throw ServerException(
+        'Failed to validate teacher code: ${e.message ?? e.code}',
+        e.code,
+      );
     } catch (e) {
       throw ServerException('Failed to validate teacher code: $e');
     }

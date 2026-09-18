@@ -33,6 +33,23 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(studentId)).data.ownerAdminId == request.auth.uid);
     }
 
+    // A student may increment a course counter only as part of the same atomic
+    // batch that creates their profile. This keeps registration atomic without
+    // granting students general write access to course documents.
+    function isInitialStudentEnrollment(courseId) {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let newUser = getAfter(userPath).data;
+      return isAuthenticated()
+        && !exists(userPath)
+        && newUser.role == 'student'
+        && newUser.ownerAdminId == resource.data.ownerAdminId
+        && newUser.enrolledCourseIds is list
+        && courseId in newUser.enrolledCourseIds
+        && resource.data.studentCount is int
+        && request.resource.data.studentCount == resource.data.studentCount + 1
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['studentCount']);
+    }
+
     function canReadNotification() {
       return isAuthenticated()
         && (
@@ -102,8 +119,9 @@ service cloud.firestore {
 
     // 2. Admin Join Codes
     match /admin_join_codes/{codeHash} {
-      // Individual code verification: any authenticated user can get a specific document by hash
-      allow get: if isAuthenticated();
+      // Registration validates one exact document by its SHA-256 id before the
+      // student has an account. Listing remains protected to prevent enumeration.
+      allow get: if true;
       // Enumeration / list: strictly restricted to Admins and Super Admin (students cannot list codes)
       allow list: if isAdmin();
       // Admin can manage their own join code; Super Admin can manage all join codes
@@ -113,8 +131,11 @@ service cloud.firestore {
 
     // 3. Courses, Units & Lessons
     match /courses/{courseId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      // Course documents contain catalogue metadata needed by the signup form.
+      // Lesson content remains protected below.
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || isInitialStudentEnrollment(courseId);
 
       match /units/{unitId} {
         allow read: if isAuthenticated();
