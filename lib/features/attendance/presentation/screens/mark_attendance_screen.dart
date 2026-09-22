@@ -20,6 +20,14 @@ class MarkAttendanceScreen extends StatefulWidget {
 
 class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
   DateTime _selectedDate = DateTime.now();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,19 +45,36 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
         appBar: AppBar(title: const Text('تسجيل الحضور والغياب')),
         body: BlocConsumer<AttendanceBloc, AttendanceState>(
           listener: (context, state) {
-            if (state is AttendanceSaveSuccessState) {
+            if (state is AttendanceLoadedState && state.savedCount != null) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(
-                    'تم حفظ كشف الحضور لـ ${state.count} طالب بنجاح!',
+                    'تم حفظ حضور ${state.savedCount} طالب بنجاح!',
                   ),
                   backgroundColor: AppColors.success,
                 ),
               );
-              Navigator.pop(context);
+            } else if (state is AttendanceLoadedState &&
+                state.saveError != null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(state.saveError!),
+                  backgroundColor: AppColors.error,
+                ),
+              );
             }
           },
           builder: (context, state) {
+            final visibleRecords =
+                state is AttendanceLoadedState
+                    ? state.records
+                        .where(
+                          (record) => record.studentName
+                              .toLowerCase()
+                              .contains(_searchQuery.trim().toLowerCase()),
+                        )
+                        .toList()
+                    : const <AttendanceRecord>[];
             return ResponsiveContent(
               maxWidth: 880,
               child: Column(
@@ -126,7 +151,7 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                     children: [
                       if (state is AttendanceLoadedState) ...[
                         Text(
-                          '${state.records.length} طالب',
+                          '${state.records.length} طالب • ${state.changedStudentIds.length} محدد للحفظ',
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             color: AppColors.textSecondary,
@@ -137,15 +162,38 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                       TextButton.icon(
                         icon: const Icon(Icons.done_all, size: 16),
                         label: const Text('تحديد الكل حاضر'),
-                        onPressed: () {
+                        onPressed: state is AttendanceLoadedState && !state.isSaving
+                            ? () {
                           context.read<AttendanceBloc>().add(
                             MarkAllPresentEvent(),
                           );
-                        },
+                        }
+                            : null,
                       ),
                     ],
                   ),
                 ),
+
+                if (state is AttendanceLoadedState)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) => setState(() => _searchQuery = value),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث عن طالب بالاسم',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        filled: true,
+                        fillColor: AppColors.surface,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.border),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (state is AttendanceLoadedState)
+                  const SizedBox(height: 12),
 
                 // Students Attendance List
                 Expanded(
@@ -153,11 +201,15 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                       state is AttendanceLoading
                           ? const Center(child: CircularProgressIndicator())
                           : state is AttendanceLoadedState
-                          ? ListView.builder(
+                          ? visibleRecords.isEmpty
+                              ? const Center(
+                                child: Text('لا يوجد طالب يطابق البحث'),
+                              )
+                              : ListView.builder(
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            itemCount: state.records.length,
+                            itemCount: visibleRecords.length,
                             itemBuilder: (context, index) {
-                              final r = state.records[index];
+                              final r = visibleRecords[index];
                               return Card(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 child: Padding(
@@ -165,47 +217,83 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                                     horizontal: 14,
                                     vertical: 10,
                                   ),
-                                  child: Row(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
-                                      CircleAvatar(
-                                        radius: 18,
-                                        backgroundColor: AppColors.primaryLight
-                                            .withAlpha(25),
-                                        child: Text(
-                                          r.studentName.isNotEmpty
-                                              ? r.studentName[0]
-                                              : 'ط',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.primary,
-                                            fontSize: 14,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          r.studentName,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                            color: AppColors.textPrimary,
-                                          ),
-                                        ),
-                                      ),
-
-                                      // 3-way toggle (Present / Late / Absent)
-                                      _StatusChoice(
-                                        currentStatus: r.status,
-                                        onSelected: (newStatus) {
-                                          context.read<AttendanceBloc>().add(
-                                            ToggleStudentStatusEvent(
-                                              studentId: r.studentId,
-                                              newStatus: newStatus,
+                                      Row(
+                                        children: [
+                                          CircleAvatar(
+                                            radius: 18,
+                                            backgroundColor: AppColors.primaryLight
+                                                .withAlpha(25),
+                                            child: Text(
+                                              r.studentName.isNotEmpty
+                                                  ? r.studentName[0]
+                                                  : 'ط',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.primary,
+                                                fontSize: 14,
+                                              ),
                                             ),
-                                          );
-                                        },
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              r.studentName,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 14,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
+                                      const SizedBox(height: 8),
+                                      if (!state.savedStudentIds.contains(r.studentId) &&
+                                          !state.changedStudentIds.contains(r.studentId))
+                                        const Text(
+                                          'لم تُسجّل حالته بعد',
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      Align(
+                                        alignment: AlignmentDirectional.centerEnd,
+                                        child: _StatusChoice(
+                                          currentStatus:
+                                              state.savedStudentIds.contains(r.studentId) ||
+                                                      state.changedStudentIds.contains(r.studentId)
+                                                  ? r.status
+                                                  : null,
+                                          isEnabled: !state.isSaving,
+                                          onSelected: (newStatus) {
+                                            context.read<AttendanceBloc>().add(
+                                              ToggleStudentStatusEvent(
+                                                studentId: r.studentId,
+                                                newStatus: newStatus,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      if (state.changedStudentIds.contains(r.studentId)) ...[
+                                        const SizedBox(height: 6),
+                                        Align(
+                                          alignment: AlignmentDirectional.centerEnd,
+                                          child: TextButton.icon(
+                                            icon: const Icon(Icons.save_outlined),
+                                            label: const Text('حفظ هذا الطالب'),
+                                            onPressed: state.isSaving
+                                                ? null
+                                                : () => context.read<AttendanceBloc>().add(
+                                                    SaveStudentAttendanceEvent(r.studentId),
+                                                  ),
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
@@ -231,10 +319,12 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
                       ),
                     ),
                     child: AppButton(
-                      label: 'حفظ جلسة الحضور',
+                      label: 'حفظ المحددين (${state.changedStudentIds.length})',
                       icon: Icons.check,
                       isLoading: state.isSaving,
-                      onPressed: () {
+                      onPressed: state.isSaving || state.changedStudentIds.isEmpty
+                          ? null
+                          : () {
                         context.read<AttendanceBloc>().add(
                           SaveAttendanceSessionEvent(),
                         );
@@ -252,10 +342,15 @@ class _MarkAttendanceScreenState extends State<MarkAttendanceScreen> {
 }
 
 class _StatusChoice extends StatelessWidget {
-  final AttendanceStatus currentStatus;
+  final AttendanceStatus? currentStatus;
+  final bool isEnabled;
   final ValueChanged<AttendanceStatus> onSelected;
 
-  const _StatusChoice({required this.currentStatus, required this.onSelected});
+  const _StatusChoice({
+    required this.currentStatus,
+    required this.onSelected,
+    this.isEnabled = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -301,7 +396,7 @@ class _StatusChoice extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: InkWell(
-        onTap: () => onSelected(status),
+        onTap: isEnabled ? () => onSelected(status) : null,
         borderRadius: BorderRadius.circular(8),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),

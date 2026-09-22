@@ -130,10 +130,29 @@ class QuizRepositoryImpl implements QuizRepository {
     String? courseId,
   }) async {
     try {
-      return await _remoteDataSource.getAttemptsForStudent(
+      final remoteAttempts = await _remoteDataSource.getAttemptsForStudent(
         studentId,
         courseId: courseId,
       );
+      final attemptsById = <String, ExamAttemptEntity>{
+        for (final attempt in remoteAttempts) attempt.id: attempt,
+      };
+      final localAttempts = await _localDataSource.getCompletedAttempts(
+        studentId,
+      );
+      for (final local in localAttempts) {
+        if (local.status == AttemptSyncStatus.synced ||
+            (courseId != null &&
+                courseId.isNotEmpty &&
+                local.courseId != courseId)) {
+          continue;
+        }
+        attemptsById.putIfAbsent(
+          local.attemptId,
+          local.toExamAttemptEntity,
+        );
+      }
+      return attemptsById.values.toList();
     } catch (_) {
       // Fallback to locally stored completed attempts when offline
       final localAttempts = await _localDataSource.getCompletedAttempts(

@@ -54,10 +54,10 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadData(forceRefresh: true);
   }
 
-  void _loadData({bool forceRefresh = false}) {
+  Future<void> _loadData({bool forceRefresh = false}) {
     final now = DateTime.now();
     DateTime? start;
     DateTime? end;
@@ -74,7 +74,7 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
       end = null;
     }
 
-    context.read<StudentProgressCubit>().loadSummary(
+    return context.read<StudentProgressCubit>().loadSummary(
           studentId: widget.studentId,
           studentName: widget.studentName,
           courseId: widget.courseId,
@@ -87,7 +87,20 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('مستواي الأكاديمي')),
+      appBar: AppBar(
+        title: const Text('مستواي الأكاديمي'),
+        actions: [
+          BlocBuilder<StudentProgressCubit, StudentProgressState>(
+            builder: (context, state) => IconButton(
+              tooltip: 'تحديث البيانات',
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: state is StudentProgressLoading
+                  ? null
+                  : () => _loadData(forceRefresh: true),
+            ),
+          ),
+        ],
+      ),
       body: BlocBuilder<StudentProgressCubit, StudentProgressState>(
         builder: (context, state) {
           if (state is StudentProgressLoading) {
@@ -123,7 +136,7 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                     : 'المعدل التراكمي الإجمالي لكامل الكورس');
 
             return RefreshIndicator(
-              onRefresh: () async => _loadData(forceRefresh: true),
+              onRefresh: () => _loadData(forceRefresh: true),
               child: ResponsiveContent(
                 maxWidth: 960,
                 child: SingleChildScrollView(
@@ -269,6 +282,15 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                               fontFamily: 'Cairo',
                             ),
                           ),
+                          const Text(
+                            'يُحسب التقييم من الأقسام المنجزة فقط، وتُعاد موازنة أوزانها',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                              fontFamily: 'Cairo',
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             '${s.finalCompositeScore}%',
@@ -331,11 +353,13 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                       icon: Icons.calendar_today_rounded,
                       iconColor: AppColors.primary,
                       title: 'نسبة الحضور والالتزام (20%)',
-                      value: '${s.attendancePercentage}%',
+                      value: s.totalSessions == 0
+                          ? '—'
+                          : '${s.attendancePercentage}%',
                       subtitle: s.totalSessions == 0
                           ? (_selectedPeriod == 'الكل (تراكمي)'
-                              ? 'لا توجد جلسات حضور مسجلة حتى الآن'
-                              : 'لا توجد جلسات حضور مسجلة خلال هذه الفترة')
+                              ? 'لا توجد جلسات حضور مسجلة حتى الآن؛ لا تدخل في التقييم'
+                              : 'لا توجد جلسات حضور مسجلة خلال هذه الفترة؛ لا تدخل في التقييم')
                           : 'حضور: ${s.presentSessions} • غياب: ${s.absentSessions} • تأخير: ${s.lateSessions} (الإجمالي: ${s.totalSessions})',
                       progressValue: s.attendancePercentage / 100.0,
                       progressColor: AppColors.primary,
@@ -347,8 +371,12 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                       icon: Icons.quiz_rounded,
                       iconColor: AppColors.secondary,
                       title: 'متوسط الاختبارات القصيرة (35%)',
-                      value: '${s.quizAveragePercentage}%',
-                      subtitle: 'تم إنجاز ${s.completedQuizzesCount} اختبار قصير',
+                      value: s.completedQuizzesCount == 0
+                          ? '—'
+                          : '${s.quizAveragePercentage}%',
+                      subtitle: s.completedQuizzesCount == 0
+                          ? 'لم يُنجز أي اختبار قصير بعد؛ لا يدخل في التقييم'
+                          : 'تم إنجاز ${s.completedQuizzesCount} اختبار قصير',
                       progressValue: s.quizAveragePercentage / 100.0,
                       progressColor: AppColors.secondary,
                     ),
@@ -359,8 +387,12 @@ class _StudentProgressViewState extends State<_StudentProgressView> {
                       icon: Icons.assignment_rounded,
                       iconColor: AppColors.accent,
                       title: 'الامتحانات الشاملة (45%)',
-                      value: '${s.examAveragePercentage}%',
-                      subtitle: 'تم إنجاز ${s.completedExamsCount} امتحان شامل',
+                      value: s.completedExamsCount == 0
+                          ? '—'
+                          : '${s.examAveragePercentage}%',
+                      subtitle: s.completedExamsCount == 0
+                          ? 'لم يُنجز أي امتحان شامل بعد؛ لا يدخل في التقييم'
+                          : 'تم إنجاز ${s.completedExamsCount} امتحان شامل',
                       progressValue: s.examAveragePercentage / 100.0,
                       progressColor: AppColors.accent,
                     ),

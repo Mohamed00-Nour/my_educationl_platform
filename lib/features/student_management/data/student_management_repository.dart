@@ -105,6 +105,73 @@ class StudentManagementRepository {
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _auth = auth ?? FirebaseAuth.instance;
 
+  Future<void> deleteStudent(ManagedStudent student) async {
+    if (_auth.currentUser == null) {
+      throw const StudentManagementException(
+        'unauthenticated',
+        'يجب تسجيل الدخول أولاً.',
+      );
+    }
+
+    final studentRef = _firestore
+        .collection(FirestoreCollections.users)
+        .doc(student.id);
+    try {
+      await _firestore.runTransaction((transaction) async {
+        final snapshot = await transaction.get(studentRef);
+        if (!snapshot.exists) {
+          throw const StudentManagementException(
+            'not-found',
+            'لم يعد هذا الطالب موجودًا.',
+          );
+        }
+        final data = snapshot.data() ?? const <String, dynamic>{};
+        if (data['role'] != AppConstants.roleStudent) {
+          throw const StudentManagementException(
+            'invalid-argument',
+            'يمكن حذف حسابات الطلاب فقط من هذه الصفحة.',
+          );
+        }
+
+        final courseIds =
+            List<String>.from(
+              data['enrolledCourseIds'] as List? ?? const [],
+            ).toSet();
+        final courseRefs =
+            courseIds
+                .map(
+                  (id) => _firestore
+                      .collection(FirestoreCollections.courses)
+                      .doc(id),
+                )
+                .toList();
+        final courseSnapshots = <DocumentSnapshot<Map<String, dynamic>>>[];
+        for (final courseRef in courseRefs) {
+          courseSnapshots.add(await transaction.get(courseRef));
+        }
+
+        for (var index = 0; index < courseRefs.length; index++) {
+          final course = courseSnapshots[index];
+          if (!course.exists) continue;
+          final count = (course.data()?['studentCount'] as num?)?.toInt() ?? 0;
+          transaction.update(courseRefs[index], {
+            'studentCount': count > 0 ? count - 1 : 0,
+          });
+        }
+        transaction.delete(studentRef);
+      });
+    } on StudentManagementException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw StudentManagementException(
+        error.code,
+        error.code == 'permission-denied'
+            ? 'ليس لديك صلاحية حذف هذا الطالب.'
+            : 'تعذر حذف ملف الطالب. حاول مرة أخرى.',
+      );
+    }
+  }
+
   Future<List<ManagedStudent>> loadStudents(UserEntity admin) async {
     Query<Map<String, dynamic>> query = _firestore
         .collection(FirestoreCollections.users)

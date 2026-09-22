@@ -497,7 +497,7 @@ class ExamRunnerBloc extends Bloc<ExamRunnerEvent, ExamRunnerState> {
         );
 
         // Background idempotent synchronization to Firestore
-        _triggerBackgroundSync(completedAttempt, current.quiz, emit);
+        _triggerBackgroundSync(completedAttempt);
       } catch (e) {
         emit(ExamRunnerErrorState('فشل تسليم الاختبار محلياً: $e'));
       }
@@ -559,29 +559,15 @@ class ExamRunnerBloc extends Bloc<ExamRunnerEvent, ExamRunnerState> {
       ),
     );
 
-    _triggerBackgroundSync(completed, quiz, emit);
+    _triggerBackgroundSync(completed);
   }
 
-  void _triggerBackgroundSync(
-    LocalAttemptEntity attempt,
-    QuizEntity quiz,
-    Emitter<ExamRunnerState> emit,
-  ) {
+  void _triggerBackgroundSync(LocalAttemptEntity attempt) {
     unawaited(() async {
       try {
-        final synced = await _quizRepository.syncAttempt(attempt);
-        if (!isClosed && state is ExamSubmittedSuccessState) {
-          emit(
-            (state as ExamSubmittedSuccessState).copyWith(
-              attempt: synced.toExamAttemptEntity(),
-              isSyncing: false,
-            ),
-          );
-        }
+        await _quizRepository.syncAttempt(attempt);
       } catch (_) {
-        if (!isClosed && state is ExamSubmittedSuccessState) {
-          emit((state as ExamSubmittedSuccessState).copyWith(isSyncing: false));
-        }
+        // The completed attempt remains on disk for a later retry.
       }
     }());
   }

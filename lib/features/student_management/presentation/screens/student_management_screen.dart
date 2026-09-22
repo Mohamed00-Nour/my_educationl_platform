@@ -11,8 +11,13 @@ import 'student_exam_management_screen.dart';
 
 class StudentManagementScreen extends StatefulWidget {
   final UserEntity admin;
+  final StudentManagementRepository? repository;
 
-  const StudentManagementScreen({super.key, required this.admin});
+  const StudentManagementScreen({
+    super.key,
+    required this.admin,
+    this.repository,
+  });
 
   @override
   State<StudentManagementScreen> createState() =>
@@ -25,6 +30,7 @@ class _StudentManagementScreenState extends State<StudentManagementScreen> {
   List<ManagedStudent> _students = const [];
   List<ManagedCourse> _courses = const [];
   bool _loading = true;
+  String? _deletingStudentId;
   String? _error;
   StudentGrade? _gradeFilter;
   String? _courseFilter;
@@ -32,7 +38,7 @@ class _StudentManagementScreenState extends State<StudentManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _repository = StudentManagementRepository();
+    _repository = widget.repository ?? StudentManagementRepository();
     _searchController.addListener(_refreshFilters);
     _load();
   }
@@ -134,6 +140,66 @@ class _StudentManagementScreenState extends State<StudentManagementScreen> {
             ),
       ),
     );
+  }
+
+  Future<void> _deleteStudent(ManagedStudent student) async {
+    final name =
+        student.displayName.isEmpty ? student.email : student.displayName;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: const Text('حذف ملف الطالب؟'),
+            content: Text(
+              'سيُزال $name من قائمة الطلاب والكورسات. سيبقى حساب تسجيل الدخول ونتائج الاختبارات وسجل الحضور محفوظة. لا يمكن التراجع عن حذف الملف.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('حذف الملف'),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deletingStudentId = student.id);
+    try {
+      await _repository.deleteStudent(student);
+      if (!mounted) return;
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم حذف ملف الطالب من إدارة الطلاب.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } on StudentManagementException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر حذف الطالب. حاول مرة أخرى.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingStudentId = null);
+    }
   }
 
   @override
@@ -248,6 +314,9 @@ class _StudentManagementScreenState extends State<StudentManagementScreen> {
                             courses: _studentCourses(student),
                             onEdit: () => _editStudent(student),
                             onManageExams: () => _manageExams(student),
+                            onDelete: () => _deleteStudent(student),
+                            isBusy: _deletingStudentId != null,
+                            isDeleting: _deletingStudentId == student.id,
                           ),
                         ),
                     ],
@@ -301,7 +370,7 @@ class _ManagementHeader extends StatelessWidget {
                 ),
                 SizedBox(height: 3),
                 Text(
-                  'تعديل الاسم والصف والكورسات والنتائج وإرسال رابط تغيير كلمة المرور.',
+                  'تعديل بيانات الطلاب ونتائجهم أو حذف ملفاتهم من القائمة.',
                   style: TextStyle(
                     fontSize: 12,
                     color: AppColors.textSecondary,
@@ -384,6 +453,7 @@ class _FiltersCard extends StatelessWidget {
               width: 190,
               child: DropdownButtonFormField<StudentGrade?>(
                 value: gradeFilter,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'الصف'),
                 items: [
                   const DropdownMenuItem<StudentGrade?>(
@@ -441,12 +511,18 @@ class _StudentCard extends StatelessWidget {
   final List<ManagedCourse> courses;
   final VoidCallback onEdit;
   final VoidCallback onManageExams;
+  final VoidCallback onDelete;
+  final bool isBusy;
+  final bool isDeleting;
 
   const _StudentCard({
     required this.student,
     required this.courses,
     required this.onEdit,
     required this.onManageExams,
+    required this.onDelete,
+    required this.isBusy,
+    required this.isDeleting,
   });
 
   @override
@@ -539,11 +615,19 @@ class _StudentCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            if (context.isMobile)
+            if (context.isMobile && isDeleting)
+              const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else if (context.isMobile)
               PopupMenuButton<String>(
+                enabled: !isBusy,
                 onSelected: (value) {
                   if (value == 'edit') onEdit();
                   if (value == 'exams') onManageExams();
+                  if (value == 'delete') onDelete();
                 },
                 itemBuilder:
                     (_) => const [
@@ -561,19 +645,48 @@ class _StudentCard extends StatelessWidget {
                           title: Text('إدارة الدرجات والاختبارات'),
                         ),
                       ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          leading: Icon(
+                            Icons.delete_forever_outlined,
+                            color: AppColors.error,
+                          ),
+                          title: Text(
+                            'حذف ملف الطالب',
+                            style: TextStyle(color: AppColors.error),
+                          ),
+                        ),
+                      ),
                     ],
               )
             else ...[
               OutlinedButton.icon(
-                onPressed: onManageExams,
+                onPressed: isBusy ? null : onManageExams,
                 icon: const Icon(Icons.fact_check_outlined, size: 17),
                 label: const Text('الدرجات والاختبارات'),
               ),
               const SizedBox(width: 8),
               FilledButton.icon(
-                onPressed: onEdit,
+                onPressed: isBusy ? null : onEdit,
                 icon: const Icon(Icons.edit_outlined, size: 17),
                 label: const Text('تعديل الطالب'),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: isBusy ? null : onDelete,
+                tooltip: 'حذف ملف الطالب',
+                icon:
+                    isDeleting
+                        ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                        : const Icon(
+                          Icons.delete_forever_outlined,
+                          color: AppColors.error,
+                        ),
               ),
             ],
           ],

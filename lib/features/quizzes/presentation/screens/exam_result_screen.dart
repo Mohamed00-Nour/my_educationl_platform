@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/services/service_locator.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -10,6 +11,7 @@ import '../../data/services/attempt_sync_service.dart';
 import '../../domain/entities/exam_attempt_entity.dart';
 import '../../domain/entities/local_attempt_entity.dart';
 import '../../domain/entities/quiz_entity.dart';
+import '../../domain/repositories/quiz_repository.dart';
 
 class ExamResultScreen extends StatefulWidget {
   final ExamAttemptEntity attempt;
@@ -30,21 +32,55 @@ class ExamResultScreen extends StatefulWidget {
 class _ExamResultScreenState extends State<ExamResultScreen> {
   late AttemptSyncStatus _syncStatus;
   bool _isRetryingSync = false;
+  Timer? _syncStatusTimer;
 
   @override
   void initState() {
     super.initState();
     _syncStatus = widget.attempt.syncStatus;
+    if (_syncStatus != AttemptSyncStatus.synced) {
+      unawaited(_refreshSyncStatus());
+      _syncStatusTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => unawaited(_refreshSyncStatus()),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _syncStatusTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<LocalAttemptEntity?> _refreshSyncStatus() async {
+    try {
+      final attempts = await getIt<QuizRepository>()
+          .getCompletedAttemptsLocally(widget.attempt.studentId);
+      for (final attempt in attempts) {
+        if (attempt.attemptId != widget.attempt.id) continue;
+        if (mounted && _syncStatus != attempt.status) {
+          setState(() => _syncStatus = attempt.status);
+        }
+        if (attempt.status == AttemptSyncStatus.synced) {
+          _syncStatusTimer?.cancel();
+        }
+        return attempt;
+      }
+    } catch (_) {
+      // A missing local record does not change a server-loaded result.
+    }
+    return null;
   }
 
   Future<void> _manualSync() async {
     setState(() => _isRetryingSync = true);
     try {
       final syncService = getIt<AttemptSyncService>();
-      final count = await syncService.syncPendingAttempts();
+      await syncService.syncPendingAttempts();
+      final localAttempt = await _refreshSyncStatus();
       if (mounted) {
-        if (count > 0) {
-          setState(() => _syncStatus = AttemptSyncStatus.synced);
+        if (_syncStatus == AttemptSyncStatus.synced) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('تمت مزامنة نتيجة الاختبار بنجاح مع السحابة!'),
@@ -53,9 +89,13 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'النتيجة محفوظة بأمان على جهازك. سيتم رفعها تلقائياً فور توفر الإنترنت.',
+                syncService.isSyncing
+                    ? 'جاري مزامنة النتيجة الآن.'
+                    : localAttempt?.status == AttemptSyncStatus.syncFailed
+                    ? 'تعذر رفع النتيجة إلى السحابة. حاول مجدداً أو تواصل مع المسؤول.'
+                    : 'النتيجة محفوظة على جهازك وبانتظار المزامنة.',
               ),
               backgroundColor: AppColors.warning,
             ),
@@ -153,6 +193,8 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
                     child: Text(
                       isSynced
                           ? 'تمت المزامنة وحفظ النتيجة في السحابة بنجاح'
+                          : _syncStatus == AttemptSyncStatus.syncFailed
+                          ? 'تعذر رفع النتيجة. اضغط مزامنة الآن لإعادة المحاولة'
                           : 'النتيجة محفوظة بأمان على جهازك - بانتظار المزامنة',
                       style: TextStyle(
                         fontSize: 12,

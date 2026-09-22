@@ -11,6 +11,7 @@ import '../../../../core/widgets/status_badge.dart';
 import '../../../attendance/domain/entities/attendance_record.dart';
 import '../../../attendance/domain/repositories/attendance_repository.dart';
 import '../../../evaluations/domain/repositories/evaluation_repository.dart';
+import '../../../progress/domain/entities/student_progress_summary.dart';
 import '../../../quizzes/domain/entities/quiz_entity.dart';
 import '../../../quizzes/domain/repositories/quiz_repository.dart';
 import '../../domain/entities/parent_report_data.dart';
@@ -230,12 +231,8 @@ class _ParentReportScreenState extends State<ParentReportScreen> {
         final totalQuestions = a.correctCount + a.incorrectCount;
         final maxMarks = quiz?.totalMarks ??
             (totalQuestions > 0 ? totalQuestions : (a.score > 0 ? a.score : 100));
-        final normalizedPercentage = maxMarks > 0
-            ? PerformanceRating.fromScore(
-                score: a.score,
-                totalMarks: maxMarks,
-              ).percentage
-            : PerformanceRating.fromPercentage(a.percentage).percentage;
+        final normalizedPercentage =
+            PerformanceRating.fromPercentage(a.percentage).percentage;
 
         if (isFullExam) {
           exams.add({
@@ -259,14 +256,8 @@ class _ParentReportScreenState extends State<ParentReportScreen> {
         }
       }
 
-      final quizAverage =
-          quizzes.isNotEmpty
-              ? double.parse((quizSum / quizzes.length).toStringAsFixed(1))
-              : 0.0;
-      final examAverage =
-          exams.isNotEmpty
-              ? double.parse((examSum / exams.length).toStringAsFixed(1))
-              : 0.0;
+      final quizAverage = quizzes.isNotEmpty ? quizSum / quizzes.length : 0.0;
+      final examAverage = exams.isNotEmpty ? examSum / exams.length : 0.0;
 
       // 3. Fetch real conduct adjustments
       final allAdjustments = await evalRepo.getAdjustmentsForStudent(
@@ -300,14 +291,22 @@ class _ParentReportScreenState extends State<ParentReportScreen> {
 
       final netAdjustments = totalBonus - totalMinus;
 
-      // Weighted score
-      final baseScore =
-          (attendancePercentage * 0.20) +
-          (quizAverage * 0.35) +
-          (examAverage * 0.45);
-      final overallEvaluation = double.parse(
-        (baseScore + netAdjustments).clamp(0.0, 100.0).toStringAsFixed(1),
+      final progressSummary = StudentProgressSummary.calculate(
+        studentId: widget.studentId,
+        studentName: widget.studentName,
+        courseId: widget.courseId,
+        totalSessions: totalSessions,
+        presentSessions: presentCount,
+        absentSessions: absentCount,
+        lateSessions: lateCount,
+        completedQuizzesCount: quizzes.length,
+        quizAveragePercentage: quizAverage,
+        completedExamsCount: exams.length,
+        examAveragePercentage: examAverage,
+        totalBonusPoints: totalBonus,
+        totalMinusPoints: totalMinus,
       );
+      final overallEvaluation = progressSummary.finalCompositeScore;
 
       final performance = PerformanceRating.fromPercentage(overallEvaluation);
       final remarks =
@@ -339,8 +338,8 @@ class _ParentReportScreenState extends State<ParentReportScreen> {
             sessionDetails: sessionDetails,
             quizzes: quizzes,
             exams: exams,
-            quizAverage: quizAverage,
-            examAverage: examAverage,
+            quizAverage: progressSummary.quizAveragePercentage,
+            examAverage: progressSummary.examAveragePercentage,
             adjustments: adjustments,
             totalBonus: totalBonus,
             totalMinus: totalMinus,
@@ -645,7 +644,9 @@ class _ParentReportScreenState extends State<ParentReportScreen> {
                             ),
                             _MiniStat(
                               'نسبة الحضور',
-                              '${_reportData!.attendancePercentage}%',
+                              _reportData!.totalSessions == 0
+                                  ? '—'
+                                  : '${_reportData!.attendancePercentage}%',
                               color: AppColors.primary,
                             ),
                           ],

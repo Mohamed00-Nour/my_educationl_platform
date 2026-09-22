@@ -57,5 +57,66 @@ void main() {
 
       expect(summary.finalCompositeScore, 100.0);
     });
+
+    test('redistributes weights when no full exam has been completed', () {
+      final summary = StudentProgressSummary.calculate(
+        studentId: 'student_3',
+        studentName: 'Learner',
+        courseId: 'course_1',
+        totalSessions: 2,
+        presentSessions: 2,
+        absentSessions: 0,
+        lateSessions: 0,
+        completedQuizzesCount: 4,
+        quizAveragePercentage: 96.7,
+        completedExamsCount: 0,
+        examAveragePercentage: 0,
+        totalBonusPoints: 0,
+        totalMinusPoints: 0,
+      );
+
+      // (100 * 0.20 + 96.7 * 0.35) / (0.20 + 0.35) = 97.9.
+      expect(summary.finalCompositeScore, 97.9);
+    });
+
+    test('a completed exam with zero marks still affects the score', () {
+      final summary = StudentProgressSummary.calculate(
+        studentId: 'student_4',
+        studentName: 'Learner',
+        courseId: 'course_1',
+        totalSessions: 2,
+        presentSessions: 2,
+        absentSessions: 0,
+        lateSessions: 0,
+        completedQuizzesCount: 4,
+        quizAveragePercentage: 96.7,
+        completedExamsCount: 1,
+        examAveragePercentage: 0,
+        totalBonusPoints: 0,
+        totalMinusPoints: 0,
+      );
+
+      expect(summary.finalCompositeScore, closeTo(53.8, 0.1));
+    });
+
+    test('shows no score before any graded activity', () {
+      final summary = StudentProgressSummary.calculate(
+        studentId: 'student_5',
+        studentName: 'Learner',
+        courseId: 'course_1',
+        totalSessions: 0,
+        presentSessions: 0,
+        absentSessions: 0,
+        lateSessions: 0,
+        completedQuizzesCount: 0,
+        quizAveragePercentage: 0,
+        completedExamsCount: 0,
+        examAveragePercentage: 0,
+        totalBonusPoints: 5,
+        totalMinusPoints: 0,
+      );
+
+      expect(summary.finalCompositeScore, 0);
+    });
   });
 }

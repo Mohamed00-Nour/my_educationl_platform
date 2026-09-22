@@ -109,7 +109,10 @@ service cloud.firestore {
         || (isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'ownerAdminId']))
         || (isStrictAdmin() && resource.data.ownerAdminId == request.auth.uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'ownerAdminId']));
 
-      allow delete: if isSuperAdmin();
+      allow delete: if isSuperAdmin()
+        || (isStrictAdmin()
+          && resource.data.role == 'student'
+          && resource.data.ownerAdminId == request.auth.uid);
 
       match /summaries/{summaryType} {
         allow read: if isOwner(userId) || isAdmin();

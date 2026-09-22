@@ -36,6 +36,14 @@ class MarkAllPresentEvent extends AttendanceEvent {}
 
 class SaveAttendanceSessionEvent extends AttendanceEvent {}
 
+class SaveStudentAttendanceEvent extends AttendanceEvent {
+  final String studentId;
+  const SaveStudentAttendanceEvent(this.studentId);
+
+  @override
+  List<Object?> get props => [studentId];
+}
+
 // STATES
 abstract class AttendanceState extends Equatable {
   const AttendanceState();
@@ -51,38 +59,56 @@ class AttendanceLoadedState extends AttendanceState {
   final String courseId;
   final String sessionDate;
   final List<AttendanceRecord> records;
+  final Set<String> savedStudentIds;
+  final Set<String> changedStudentIds;
   final bool isSaving;
+  final String? saveError;
+  final int? savedCount;
 
   const AttendanceLoadedState({
     required this.courseId,
     required this.sessionDate,
     required this.records,
+    this.savedStudentIds = const {},
+    this.changedStudentIds = const {},
     this.isSaving = false,
+    this.saveError,
+    this.savedCount,
   });
 
   AttendanceLoadedState copyWith({
     String? courseId,
     String? sessionDate,
     List<AttendanceRecord>? records,
+    Set<String>? savedStudentIds,
+    Set<String>? changedStudentIds,
     bool? isSaving,
+    String? saveError,
+    int? savedCount,
   }) {
     return AttendanceLoadedState(
       courseId: courseId ?? this.courseId,
       sessionDate: sessionDate ?? this.sessionDate,
       records: records ?? this.records,
+      savedStudentIds: savedStudentIds ?? this.savedStudentIds,
+      changedStudentIds: changedStudentIds ?? this.changedStudentIds,
       isSaving: isSaving ?? this.isSaving,
+      saveError: saveError,
+      savedCount: savedCount,
     );
   }
 
   @override
-  List<Object?> get props => [courseId, sessionDate, records, isSaving];
-}
-
-class AttendanceSaveSuccessState extends AttendanceState {
-  final int count;
-  const AttendanceSaveSuccessState(this.count);
-  @override
-  List<Object?> get props => [count];
+  List<Object?> get props => [
+    courseId,
+    sessionDate,
+    records,
+    savedStudentIds,
+    changedStudentIds,
+    isSaving,
+    saveError,
+    savedCount,
+  ];
 }
 
 class AttendanceErrorState extends AttendanceState {
@@ -101,6 +127,7 @@ class AttendanceBloc extends Bloc<AttendanceEvent, AttendanceState> {
     on<ToggleStudentStatusEvent>(_onToggleStatus);
     on<MarkAllPresentEvent>(_onMarkAllPresent);
     on<SaveAttendanceSessionEvent>(_onSaveSession);
+    on<SaveStudentAttendanceEvent>(_onSaveStudent);
   }
 
   Future<void> _onLoadSession(
@@ -114,33 +141,43 @@ class AttendanceBloc extends Bloc<AttendanceEvent, AttendanceState> {
         sessionDate: event.sessionDate,
       );
 
-      List<AttendanceRecord> records = existing;
-      if (records.isEmpty) {
-        final students = await _repository.getEnrolledStudents(
-          courseId: event.courseId,
+      final students = await _repository.getEnrolledStudents(
+        courseId: event.courseId,
+      );
+      final existingByStudentId = {
+        for (final record in existing) record.studentId: record,
+      };
+      final records = <AttendanceRecord>[];
+      for (final student in students) {
+        final studentId = student['id'] ?? '';
+        if (studentId.isEmpty) continue;
+        records.add(
+          existingByStudentId.remove(studentId) ??
+              AttendanceRecord(
+                id: '',
+                courseId: event.courseId,
+                sessionDate: event.sessionDate,
+                studentId: studentId,
+                studentName: student['name'] ?? 'Student',
+                status: AttendanceStatus.present,
+                recordedBy: 'teacher',
+                timestamp: DateTime.now(),
+              ),
         );
-        records =
-            students
-                .map(
-                  (s) => AttendanceRecord(
-                    id: '',
-                    courseId: event.courseId,
-                    sessionDate: event.sessionDate,
-                    studentId: s['id'] ?? '',
-                    studentName: s['name'] ?? 'Student',
-                    status: AttendanceStatus.present,
-                    recordedBy: 'teacher',
-                    timestamp: DateTime.now(),
-                  ),
-                )
-                .toList();
       }
+      records.addAll(existingByStudentId.values);
+      records.sort(
+        (a, b) => a.studentName.toLowerCase().compareTo(
+          b.studentName.toLowerCase(),
+        ),
+      );
 
       emit(
         AttendanceLoadedState(
           courseId: event.courseId,
           sessionDate: event.sessionDate,
           records: records,
+          savedStudentIds: existing.map((record) => record.studentId).toSet(),
         ),
       );
     } catch (e) {
@@ -154,15 +191,24 @@ class AttendanceBloc extends Bloc<AttendanceEvent, AttendanceState> {
   ) {
     if (state is AttendanceLoadedState) {
       final current = state as AttendanceLoadedState;
+      if (current.isSaving) return;
       final updated =
           current.records.map((r) {
             if (r.studentId == event.studentId) {
-              return r.copyWith(status: event.newStatus);
+              return r.copyWith(
+                status: event.newStatus,
+                timestamp: DateTime.now(),
+              );
             }
             return r;
           }).toList();
 
-      emit(current.copyWith(records: updated));
+      emit(
+        current.copyWith(
+          records: updated,
+          changedStudentIds: {...current.changedStudentIds, event.studentId},
+        ),
+      );
     }
   }
 
@@ -172,11 +218,25 @@ class AttendanceBloc extends Bloc<AttendanceEvent, AttendanceState> {
   ) {
     if (state is AttendanceLoadedState) {
       final current = state as AttendanceLoadedState;
+      if (current.isSaving) return;
       final updated =
           current.records
-              .map((r) => r.copyWith(status: AttendanceStatus.present))
+              .map(
+                (r) => r.copyWith(
+                  status: AttendanceStatus.present,
+                  timestamp: DateTime.now(),
+                ),
+              )
               .toList();
-      emit(current.copyWith(records: updated));
+      emit(
+        current.copyWith(
+          records: updated,
+          changedStudentIds: {
+            ...current.changedStudentIds,
+            ...current.records.map((record) => record.studentId),
+          },
+        ),
+      );
     }
   }
 
@@ -184,16 +244,52 @@ class AttendanceBloc extends Bloc<AttendanceEvent, AttendanceState> {
     SaveAttendanceSessionEvent event,
     Emitter<AttendanceState> emit,
   ) async {
-    if (state is AttendanceLoadedState) {
-      final current = state as AttendanceLoadedState;
-      emit(current.copyWith(isSaving: true));
+    if (state is! AttendanceLoadedState) return;
+    final current = state as AttendanceLoadedState;
+    final changedRecords = current.records
+        .where((record) => current.changedStudentIds.contains(record.studentId))
+        .toList();
+    await _saveRecords(current, changedRecords, emit);
+  }
 
-      try {
-        await _repository.saveAttendanceBatch(current.records);
-        emit(AttendanceSaveSuccessState(current.records.length));
-      } catch (e) {
-        emit(AttendanceErrorState('Failed to save attendance: $e'));
-      }
+  Future<void> _onSaveStudent(
+    SaveStudentAttendanceEvent event,
+    Emitter<AttendanceState> emit,
+  ) async {
+    if (state is! AttendanceLoadedState) return;
+    final current = state as AttendanceLoadedState;
+    if (!current.changedStudentIds.contains(event.studentId)) return;
+    final selected = current.records
+        .where((record) => record.studentId == event.studentId)
+        .toList();
+    await _saveRecords(current, selected, emit);
+  }
+
+  Future<void> _saveRecords(
+    AttendanceLoadedState current,
+    List<AttendanceRecord> records,
+    Emitter<AttendanceState> emit,
+  ) async {
+    if (current.isSaving || records.isEmpty) return;
+    emit(current.copyWith(isSaving: true));
+    try {
+      await _repository.saveAttendanceBatch(records);
+      final savedIds = records.map((record) => record.studentId).toSet();
+      emit(
+        current.copyWith(
+          isSaving: false,
+          savedStudentIds: {...current.savedStudentIds, ...savedIds},
+          changedStudentIds: current.changedStudentIds.difference(savedIds),
+          savedCount: records.length,
+        ),
+      );
+    } catch (e) {
+      emit(
+        current.copyWith(
+          isSaving: false,
+          saveError: 'تعذر حفظ الحضور: $e',
+        ),
+      );
     }
   }
 }

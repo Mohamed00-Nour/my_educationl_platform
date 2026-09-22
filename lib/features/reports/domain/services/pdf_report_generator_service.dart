@@ -224,7 +224,9 @@ class PdfReportGeneratorService {
                 pw.SizedBox(width: 8),
                 _buildMetricBox(
                   'نسبة الالتزام',
-                  '${report.attendancePercentage}%',
+                  report.totalSessions == 0
+                      ? '—'
+                      : '${report.attendancePercentage}%',
                   primaryColor,
                   borderCol,
                 ),
@@ -369,14 +371,19 @@ class PdfReportGeneratorService {
               child: pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
                 children: [
-                  _buildSummaryCol('متوسط الكويزات', '${report.quizAverage}%'),
+                  _buildSummaryCol(
+                    'متوسط الكويزات',
+                    report.quizzes.isEmpty ? '—' : '${report.quizAverage}%',
+                  ),
                   _buildSummaryCol(
                     'متوسط الامتحانات',
-                    '${report.examAverage}%',
+                    report.exams.isEmpty ? '—' : '${report.examAverage}%',
                   ),
                   _buildSummaryCol(
                     'نسبة الحضور',
-                    '${report.attendancePercentage}%',
+                    report.totalSessions == 0
+                        ? '—'
+                        : '${report.attendancePercentage}%',
                   ),
                   _buildSummaryCol(
                     'صافي التقييم',
@@ -413,6 +420,11 @@ class PdfReportGeneratorService {
                   ),
                 ],
               ),
+            ),
+            pw.SizedBox(height: 6),
+            pw.Text(
+              'يُحسب التقييم من الأقسام المنجزة فقط، وتُعاد موازنة أوزانها. الرمز — يعني أن القسم لم يدخل في التقييم.',
+              style: pw.TextStyle(color: mutedText, fontSize: 8),
             ),
             pw.SizedBox(height: 26),
 

@@ -4,6 +4,7 @@ import '../../../../core/utils/performance_rating.dart';
 import '../../../attendance/domain/entities/attendance_record.dart';
 import '../../../attendance/domain/repositories/attendance_repository.dart';
 import '../../../evaluations/domain/repositories/evaluation_repository.dart';
+import '../../../quizzes/domain/entities/quiz_entity.dart';
 import '../../../quizzes/domain/repositories/quiz_repository.dart';
 import '../../domain/entities/student_progress_summary.dart';
 import '../../domain/repositories/progress_repository.dart';
@@ -94,11 +95,26 @@ class ProgressRepositoryImpl implements ProgressRepository {
       int examCount = 0;
       double examSum = 0.0;
 
+      // Classify existing submissions using the quiz's configured type.
+      final quizTypes = <String, QuizType>{};
+      if (attempts.isNotEmpty) {
+        try {
+          final quizzes = await _quizRepository.getQuizzesForCourse(courseId);
+          for (final quiz in quizzes) {
+            quizTypes[quiz.id] = quiz.type;
+          }
+        } catch (_) {
+          // Preserve progress when quiz metadata is unavailable.
+        }
+      }
+
       for (final a in attempts) {
         final normalizedPercentage = PerformanceRating.fromPercentage(
           a.percentage,
         ).percentage;
-        if (a.durationSecondsUsed >= 1800) {
+        final isFullExam = quizTypes[a.examId] == QuizType.fullExam ||
+            (quizTypes[a.examId] == null && a.durationSecondsUsed >= 1800);
+        if (isFullExam) {
           examCount++;
           examSum += normalizedPercentage;
         } else {

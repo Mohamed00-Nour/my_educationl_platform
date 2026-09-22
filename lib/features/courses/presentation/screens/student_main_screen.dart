@@ -11,6 +11,7 @@ import '../../../quizzes/domain/entities/exam_attempt_entity.dart';
 import '../../../quizzes/domain/entities/local_attempt_entity.dart';
 import '../../../quizzes/domain/entities/quiz_entity.dart';
 import '../../../quizzes/domain/repositories/quiz_repository.dart';
+import '../../../quizzes/domain/services/student_quiz_listing.dart';
 import '../../../quizzes/presentation/screens/exam_result_screen.dart';
 import '../../../quizzes/presentation/screens/exam_taking_screen.dart';
 import '../../../quizzes/presentation/widgets/start_code_dialog.dart';
@@ -38,7 +39,7 @@ class _StudentMainScreenState extends State<StudentMainScreen> {
 
     final List<Widget> pages = [
       CourseListScreen(user: widget.user),
-      _StudentExamsTab(user: widget.user),
+      _StudentExamsTab(user: widget.user, isActive: _currentIndex == 1),
       StudentProgressScreen(
         studentId: widget.user.id,
         studentName: widget.user.displayName,
@@ -161,7 +162,8 @@ class _StudentMainScreenState extends State<StudentMainScreen> {
 
 class _StudentExamsTab extends StatefulWidget {
   final UserEntity user;
-  const _StudentExamsTab({required this.user});
+  final bool isActive;
+  const _StudentExamsTab({required this.user, required this.isActive});
 
   @override
   State<_StudentExamsTab> createState() => _StudentExamsTabState();
@@ -171,28 +173,59 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
   final Set<String> _downloadedQuizIds = {};
   final Set<String> _downloadingQuizIds = {};
   final Map<String, List<ExamAttemptEntity>> _attemptsByQuizId = {};
+  final TextEditingController _searchController = TextEditingController();
+  late Future<List<QuizEntity>> _quizzesFuture;
+  StudentQuizFilter _selectedFilter = StudentQuizFilter.all;
+  String _searchQuery = '';
   bool _isLoadingCache = true;
   bool _isAutoDownloading = false;
+
+  String get _activeCourseId =>
+      widget.user.enrolledCourseIds.isNotEmpty
+          ? widget.user.enrolledCourseIds.first
+          : '';
+
+  Future<List<QuizEntity>> _fetchQuizzes() =>
+      getIt<QuizRepository>().getQuizzesForCourse(_activeCourseId);
+
+  void _refreshData() {
+    final quizzesFuture = _fetchQuizzes();
+    setState(() {
+      _quizzesFuture = quizzesFuture;
+    });
+    _loadData();
+  }
 
   @override
   void initState() {
     super.initState();
+    _quizzesFuture = _fetchQuizzes();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StudentExamsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _refreshData();
+    }
   }
 
   Future<void> _loadData() async {
     final repo = getIt<QuizRepository>();
     final cached = await repo.getAllCachedQuizzes();
 
-    final activeCourseId = widget.user.enrolledCourseIds.isNotEmpty
-        ? widget.user.enrolledCourseIds.first
-        : '';
-
     List<ExamAttemptEntity> attempts = [];
     try {
       attempts = await repo.getAttemptsForStudent(
         widget.user.id,
-        courseId: activeCourseId,
+        courseId: _activeCourseId,
       );
     } catch (_) {}
 
@@ -369,13 +402,104 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
     _loadData();
   }
 
+  String _filterLabel(StudentQuizFilter filter) {
+    switch (filter) {
+      case StudentQuizFilter.all:
+        return 'الكل';
+      case StudentQuizFilter.newItems:
+        return 'الجديدة';
+      case StudentQuizFilter.completed:
+        return 'المنجزة';
+      case StudentQuizFilter.shortQuizzes:
+        return 'الاختبارات القصيرة';
+      case StudentQuizFilter.fullExams:
+        return 'الامتحانات الشاملة';
+    }
+  }
+
+  Widget _buildSearchAndFilters(int resultCount) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _searchQuery = value),
+            decoration: InputDecoration(
+              hintText: 'ابحث باسم الاختبار أو الوصف',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon:
+                  _searchQuery.isEmpty
+                      ? null
+                      : IconButton(
+                        tooltip: 'مسح البحث',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      ),
+              filled: true,
+              fillColor: AppColors.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: AppColors.border),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children:
+                  StudentQuizFilter.values.map((filter) {
+                    final selected = _selectedFilter == filter;
+                    return Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: ChoiceChip(
+                        label: Text(_filterLabel(filter)),
+                        selected: selected,
+                        selectedColor: AppColors.primary,
+                        backgroundColor: AppColors.surface,
+                        side: BorderSide(
+                          color:
+                              selected ? AppColors.primary : AppColors.border,
+                        ),
+                        labelStyle: TextStyle(
+                          color:
+                              selected
+                                  ? AppColors.background
+                                  : AppColors.textPrimary,
+                          fontFamily: 'Cairo',
+                          fontWeight: FontWeight.w700,
+                        ),
+                        onSelected:
+                            (_) => setState(() => _selectedFilter = filter),
+                      ),
+                    );
+                  }).toList(),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'النتائج: $resultCount',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final activeCourseId =
-        widget.user.enrolledCourseIds.isNotEmpty
-            ? widget.user.enrolledCourseIds.first
-            : '';
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('الاختبارات والامتحانات المتاحة'),
@@ -383,24 +507,23 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'تحديث',
-            onPressed: () {
-              setState(() {});
-              _loadData();
-            },
+            onPressed: _refreshData,
           ),
         ],
       ),
       body: FutureBuilder<List<QuizEntity>>(
-        future: getIt<QuizRepository>().getQuizzesForCourse(activeCourseId),
+        future: _quizzesFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
+          if (snapshot.connectionState == ConnectionState.waiting ||
               _isLoadingCache) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final quizzes =
-              (snapshot.data ?? []).where((q) => q.isPublished).toList();
-          if (quizzes.isEmpty) {
+          final allQuizzes = listStudentQuizzes(
+            quizzes: snapshot.data ?? const <QuizEntity>[],
+            attemptedQuizIds: _attemptsByQuizId.keys.toSet(),
+          );
+          if (allQuizzes.isEmpty) {
             return const EmptyStateView(
               icon: Icons.assignment_outlined,
               title: 'لا توجد اختبارات متاحة',
@@ -409,15 +532,44 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
           }
 
           // Auto-download all published quizzes when student is online
-          _checkAndAutoDownload(quizzes);
+          _checkAndAutoDownload(allQuizzes);
+
+          final quizzes = listStudentQuizzes(
+            quizzes: allQuizzes,
+            attemptedQuizIds: _attemptsByQuizId.keys.toSet(),
+            filter: _selectedFilter,
+            searchQuery: _searchQuery,
+          );
 
           return ResponsiveContent(
             maxWidth: 860,
             child: ListView.builder(
               padding: context.screenPadding,
-              itemCount: quizzes.length,
+              itemCount: quizzes.isEmpty ? 2 : quizzes.length + 1,
               itemBuilder: (context, index) {
-                final quiz = quizzes[index];
+                if (index == 0) {
+                  return _buildSearchAndFilters(quizzes.length);
+                }
+                if (quizzes.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.search_off_rounded,
+                          color: AppColors.textSecondary,
+                          size: 42,
+                        ),
+                        SizedBox(height: 12),
+                        Text(
+                          'لا توجد اختبارات تطابق البحث أو التصفية',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                final quiz = quizzes[index - 1];
                 final isOfflineReady = _downloadedQuizIds.contains(quiz.id);
                 final isDownloading = _downloadingQuizIds.contains(quiz.id);
                 final isExam = quiz.isFullExam;
@@ -434,10 +586,12 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
                 final isDeadlinePassed =
                     quiz.availableUntil != null &&
                     DateTime.now().isAfter(quiz.availableUntil!);
-                final isCompleted =
-                    hasPassed ||
-                    (attempts.isNotEmpty &&
-                        (hasConsumedRetries || isDeadlinePassed));
+                final isCompleted = attempts.isNotEmpty;
+                final canRetry =
+                    isCompleted &&
+                    !hasPassed &&
+                    !hasConsumedRetries &&
+                    !isDeadlinePassed;
 
                 final latestAttempt =
                     attempts.isNotEmpty
@@ -624,7 +778,7 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
                                         Text(
                                           hasPassed
                                               ? 'تم الإجتياز بنجاح'
-                                              : 'تم الإجتياز',
+                                              : 'تم تسليم الاختبار',
                                           style: const TextStyle(
                                             color: AppColors.success,
                                             fontWeight: FontWeight.w800,
@@ -788,6 +942,17 @@ class _StudentExamsTabState extends State<_StudentExamsTab> {
                               ],
                             ],
                           ),
+                          if (canRetry) ...[
+                            const SizedBox(height: 10),
+                            AppButton(
+                              label: 'إعادة المحاولة',
+                              icon: Icons.refresh_rounded,
+                              height: 42,
+                              backgroundColor: AppColors.surfaceVariant,
+                              textColor: AppColors.primaryLight,
+                              onPressed: () => _startQuizOrExam(quiz),
+                            ),
+                          ],
                         ],
                       ),
                     ),

@@ -64,7 +64,7 @@ void main() {
       expect(hasPassed, isTrue);
     });
 
-    test('Does not mark as completed when student failed 1st attempt and retries remain', () {
+    test('Shows the result after a failed attempt while keeping retry available', () {
       final attempts = [
         createAttempt(
           id: 'att_1',
@@ -76,10 +76,11 @@ void main() {
 
       final hasPassed = attempts.any((a) => a.isPassed);
       final hasConsumedRetries = attempts.length >= baseQuiz.maxAttempts;
-      final isCompleted = hasPassed || hasConsumedRetries;
+      final isCompleted = attempts.isNotEmpty;
+      final canRetry = isCompleted && !hasPassed && !hasConsumedRetries;
 
-      expect(isCompleted, isFalse);
-      expect(hasConsumedRetries, isFalse);
+      expect(isCompleted, isTrue);
+      expect(canRetry, isTrue);
     });
 
     test('Marks as completed when student exhausts all allowed retries', () {
@@ -148,7 +149,7 @@ void main() {
     test('Status badges and action button labels match requirements', () {
       const readyBadge = 'تم التحميل وجاهز للبدء';
       const passedBadge = 'تم الإجتياز بنجاح';
-      const completedBadge = 'تم الإجتياز';
+      const completedBadge = 'تم تسليم الاختبار';
       const detailsButton = 'عرض تفاصيل ونتيجة الاختبار';
       const startQuizButton = 'بدء اختبار الدرس الآن';
 
@@ -157,7 +158,8 @@ void main() {
       expect(startQuizButton, 'بدء اختبار الدرس الآن');
 
       // 2. When completed
-      expect(passedBadge.contains(completedBadge), isTrue);
+      expect(passedBadge, 'تم الإجتياز بنجاح');
+      expect(completedBadge, 'تم تسليم الاختبار');
       expect(detailsButton, 'عرض تفاصيل ونتيجة الاختبار');
     });
   });

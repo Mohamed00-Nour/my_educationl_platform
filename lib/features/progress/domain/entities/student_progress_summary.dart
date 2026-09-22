@@ -86,13 +86,24 @@ class StudentProgressSummary extends Equatable {
 
     final int netAdj = totalBonusPoints - totalMinusPoints;
 
-    // Composite weighted score
-    double baseScore =
-        (attPct * weighting.attendanceWeight) +
-        (quizAveragePercentage * weighting.quizWeight) +
-        (examAveragePercentage * weighting.examWeight);
-
-    double totalScore = (baseScore + netAdj).clamp(0.0, 100.0);
+    // Redistribute the configured weights across categories with recorded work.
+    // An unfinished category does not count as a zero grade.
+    final activeWeight =
+        (totalSessions > 0 ? weighting.attendanceWeight : 0.0) +
+        (completedQuizzesCount > 0 ? weighting.quizWeight : 0.0) +
+        (completedExamsCount > 0 ? weighting.examWeight : 0.0);
+    final weightedScore =
+        (totalSessions > 0 ? attPct * weighting.attendanceWeight : 0.0) +
+        (completedQuizzesCount > 0
+            ? quizAveragePercentage * weighting.quizWeight
+            : 0.0) +
+        (completedExamsCount > 0
+            ? examAveragePercentage * weighting.examWeight
+            : 0.0);
+    final double totalScore =
+        activeWeight > 0
+            ? (weightedScore / activeWeight + netAdj).clamp(0.0, 100.0)
+            : 0.0;
 
     return StudentProgressSummary(
       studentId: studentId,

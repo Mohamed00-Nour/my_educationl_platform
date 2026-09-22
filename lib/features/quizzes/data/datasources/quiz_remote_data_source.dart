@@ -140,12 +140,6 @@ class QuizRemoteDataSourceImpl implements QuizRemoteDataSource {
           .collection(FirestoreCollections.examAttempts)
           .doc(attemptDocId);
 
-      // Check if this exact attempt was already successfully persisted (Idempotency)
-      final existingDoc = await docRef.get();
-      if (existingDoc.exists) {
-        return ExamAttemptModel.fromFirestore(existingDoc);
-      }
-
       final modelToSave = ExamAttemptModel(
         id: attemptDocId,
         studentId: attempt.studentId,
@@ -163,8 +157,30 @@ class QuizRemoteDataSourceImpl implements QuizRemoteDataSource {
         isPassed: attempt.isPassed,
       );
 
-      await docRef.set(modelToSave.toMap());
-      return modelToSave;
+      try {
+        // A student may create their own attempt, but cannot read a document
+        // that does not exist yet under the Firestore ownership rules.
+        await docRef.set(modelToSave.toMap());
+        return modelToSave;
+      } on FirebaseException catch (error) {
+        if (error.code == 'permission-denied') {
+          // A retry of a successfully saved attempt is an update, which the
+          // student cannot perform. Verify the existing server document before
+          // treating the retry as successful.
+          final existingDoc = await docRef.get(
+            const GetOptions(source: Source.server),
+          );
+          if (existingDoc.exists) {
+            final existing = ExamAttemptModel.fromFirestore(existingDoc);
+            if (existing.studentId == attempt.studentId &&
+                existing.examId == attempt.examId &&
+                existing.courseId == attempt.courseId) {
+              return existing;
+            }
+          }
+        }
+        rethrow;
+      }
     } catch (e) {
       throw ServerException('Failed to submit exam attempt: $e');
     }
